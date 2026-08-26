@@ -152,7 +152,7 @@ async def handle_callback(vk, user_id, payload):
         await process_battle_action(vk, user_id, action, payload)
         return
 
- # ---- НАВИГАЦИЯ (явные переходы) ----
+    # ---- НАВИГАЦИЯ (явные переходы) ----
     if cmd == 'go_city':
         from .base import navigate_to
         await navigate_to(vk, user_id, 'city')
@@ -520,6 +520,32 @@ async def handle_callback(vk, user_id, payload):
         await show_guild(vk, user_id)
         return
 
+    if cmd == 'guild_list':
+        from locations.guild import show_guild_list
+        await show_guild_list(vk, user_id)
+        return
+
+    if cmd == 'guild_create':
+        await send_message(vk, user_id, 'Введите название гильдии (макс. 30 символов):')
+        await update_user_async(user_id, state='awaiting_guild_name', context={'parent_state': 'guild'})
+        return
+
+    if cmd == 'guild_join':
+        guild_id = payload.get('guild_id')
+        if not guild_id:
+            await send_message(vk, user_id, 'Ошибка: не указана гильдия.', get_back_keyboard('гильдию'))
+            return
+        char = await get_character_async(user_id)
+        if not char:
+            await send_message(vk, user_id, 'Сначала создайте персонажа.', get_back_keyboard('город'))
+            return
+        success, msg = join_guild(char['id'], guild_id)
+        if success:
+            await send_message(vk, user_id, f'✅ {msg}', get_back_keyboard('гильдию'))
+        else:
+            await send_message(vk, user_id, f'❌ {msg}', get_back_keyboard('гильдию'))
+        return
+
     if cmd == 'guild_donate':
         await show_guild_donate(vk, user_id)
         return
@@ -598,7 +624,13 @@ async def handle_callback(vk, user_id, payload):
         await show_guild_manage(vk, user_id)
         return
 
-    # ✅ ИСПРАВЛЕНО: назначение ранга - возврат в управление
+    if cmd == 'guild_manage_member':
+        member_id = payload.get('member_id')
+        if member_id:
+            from locations.guild import show_guild_manage_member_by_id
+            await show_guild_manage_member_by_id(vk, user_id, member_id)
+        return
+
     if cmd == 'guild_set_rank':
         member_id = payload.get('member_id')
         new_rank = payload.get('rank')
@@ -612,12 +644,10 @@ async def handle_callback(vk, user_id, payload):
                 await send_message(vk, user_id, f'✅ {msg}')
             else:
                 await send_message(vk, user_id, f'❌ {msg}')
-            # ✅ Возвращаем в управление гильдией
             from locations.guild import show_guild_manage
             await show_guild_manage(vk, user_id)
         return
 
-    # ✅ ИСПРАВЛЕНО: исключение участника - возврат в управление
     if cmd == 'guild_kick':
         member_id = payload.get('member_id')
         if member_id:
@@ -630,7 +660,6 @@ async def handle_callback(vk, user_id, payload):
                 await send_message(vk, user_id, f'✅ {msg}')
             else:
                 await send_message(vk, user_id, f'❌ {msg}')
-            # ✅ Возвращаем в управление гильдией
             from locations.guild import show_guild_manage
             await show_guild_manage(vk, user_id)
         return
@@ -643,6 +672,17 @@ async def handle_callback(vk, user_id, payload):
     if cmd == 'guild_chat_send':
         await update_user_async(user_id, state='awaiting_guild_message', context={'parent_state': 'guild_chat'})
         await send_message(vk, user_id, 'Введите сообщение для чата гильдии:')
+        return
+
+    if cmd == 'guild_list_page':
+        page = payload.get('page', 1)
+        from locations.guild import show_guild_list
+        await show_guild_list(vk, user_id, page)
+        return
+
+    if cmd == 'guild_list_refresh':
+        from locations.guild import show_guild_list
+        await show_guild_list(vk, user_id, 1)
         return
 
     # ---- ТАВЕРНА ----
