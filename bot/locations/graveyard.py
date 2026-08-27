@@ -5,7 +5,7 @@ from core import get_character_async, update_user_async, send_message, get_user_
 from battle import start_battle, delay_with_message
 from keyboards import get_back_keyboard
 from vk_api.keyboard import VkKeyboard, VkKeyboardColor
-from .base import GRAVEYARD_IMAGE, GRAVEYARD_DEEP_IMAGE, GRAVEYARD_WANDER_IMAGE
+from .base import GRAVEYARD_IMAGE, GRAVEYARD_DEEP_IMAGE, GRAVEYARD_WANDER_IMAGE, delay_action
 
 async def show_graveyard(vk, user_id):
     """Показ кладбища - меню"""
@@ -39,15 +39,18 @@ async def show_graveyard(vk, user_id):
     await update_user_async(user_id, state='graveyard', context={'parent_state': 'exit'})
 
 async def graveyard_deep(vk, user_id):
-    """Углубление на кладбище"""
+    """Углубление на кладбище - с задержкой и блокировкой"""
     char = await get_character_async(user_id)
     if not char:
         await send_message(vk, user_id, 'Сначала создайте персонажа.', get_back_keyboard('город'))
         return
     
-    await send_message(vk, user_id, "🕳️ Вы углубляетесь на кладбище...", attachment=GRAVEYARD_DEEP_IMAGE)
-    await asyncio.sleep(random.randint(3, 8))
-    
+    success = await delay_action(vk, user_id, 'graveyard_deep', delay_range=(3, 8))
+    if not success:
+        return
+
+async def graveyard_deep_execute(vk, user_id):
+    """Выполнение углубления на кладбище (после задержки)"""
     user_data = await get_user_async(user_id)
     context = user_data['context']
     depth = context.get('graveyard_depth', 0) + 1
@@ -56,15 +59,18 @@ async def graveyard_deep(vk, user_id):
     await start_battle(vk, user_id, 'graveyard', depth)
 
 async def graveyard_wander(vk, user_id):
-    """Бродяжничество на кладбище"""
+    """Бродяжничество на кладбище - с задержкой и блокировкой"""
     char = await get_character_async(user_id)
     if not char:
         await send_message(vk, user_id, 'Сначала создайте персонажа.', get_back_keyboard('город'))
         return
     
-    await send_message(vk, user_id, "🔍 Вы ищете следы на кладбище...", attachment=GRAVEYARD_WANDER_IMAGE)
-    await asyncio.sleep(random.randint(3, 8))
-    
+    success = await delay_action(vk, user_id, 'graveyard_wander', delay_range=(3, 8))
+    if not success:
+        return
+
+async def graveyard_wander_execute(vk, user_id):
+    """Выполнение бродяжничества на кладбище (после задержки)"""
     user_data = await get_user_async(user_id)
     depth = user_data['context'].get('graveyard_depth', 0)
     await start_battle(vk, user_id, 'graveyard', depth)
