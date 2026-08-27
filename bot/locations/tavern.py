@@ -56,21 +56,22 @@ def get_food_keyboard():
     return keyboard
 
 def get_sleep_keyboard():
-    """Клавиатура выбора комнаты - каждая кнопка на новой строке"""
+    """Клавиатура выбора комнаты - каждая кнопка на новой строке (БЕЗ ПЛАТЫ)"""
     from vk_api.keyboard import VkKeyboard, VkKeyboardColor
     keyboard = VkKeyboard()
     
+    # Бесплатно, время 1-3 часа
     rooms = [
-        ('🛏️ Простая (2ч, +30%)', 2, 30, 50),
-        ('🛏️ Уютная (4ч, +60%)', 4, 60, 100),
-        ('🛏️ Люкс (6ч, +100%)', 6, 100, 200),
+        ('🛏️ 1 час (+20% HP)', 1, 20),
+        ('🛏️ 2 часа (+50% HP)', 2, 50),
+        ('🛏️ 3 часа (+100% HP)', 3, 100),
     ]
     
-    for name, hours, percent, price in rooms:
+    for name, hours, percent in rooms:
         keyboard.add_button(
-            f'{name} ({price}💰)',
+            f'{name} (бесплатно)',
             color=VkKeyboardColor.PRIMARY,
-            payload={'cmd': 'sleep', 'hours': hours, 'percent': percent, 'price': price}
+            payload={'cmd': 'sleep', 'hours': hours, 'percent': percent, 'price': 0}
         )
         keyboard.add_line()
     
@@ -124,13 +125,13 @@ async def show_tavern_food(vk, user_id):
     await update_user_async(user_id, state='tavern_food', context=context)
 
 async def show_tavern_room(vk, user_id):
-    """Показ комнаты"""
+    """Показ комнаты (бесплатно)"""
     char = await get_character_async(user_id)
     if not char:
         await send_message(vk, user_id, 'Сначала создайте персонажа.', get_back_keyboard('город'))
         return
     
-    text = f"🛏 Выберите комнату:\n\nВаши 💰: {char['silver']}"
+    text = f"🛏 Выберите время отдыха:\n\n💤 Восстановление бесплатно!"
     
     await send_message(vk, user_id, text, get_sleep_keyboard())
     
