@@ -297,6 +297,7 @@ def get_graveyard_after_battle_keyboard():
 
 # ---- ГИЛЬДИЯ ----
 def get_guild_keyboard(guild, my_rank):
+    """Клавиатура гильдии (без кнопки сдачи квеста)"""
     keyboard = VkKeyboard()
     keyboard.add_button('👥 Список участников', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'guild_members'})
     keyboard.add_button('📦 Склад', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'guild_storage'})

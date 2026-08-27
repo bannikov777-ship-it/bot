@@ -1,6 +1,6 @@
-# handlers/guild_quests.py
+# handlers/guild_quests.py (полный исправленный)
 from core import get_character_async, send_message, update_user_async
-from guild_quests import get_available_guild_quests, take_guild_quest, cancel_guild_quest, get_active_guild_quest
+from guild_quests import get_available_guild_quests, take_guild_quest, cancel_guild_quest, get_active_guild_quest, complete_guild_quest_manual
 from keyboards import get_back_keyboard
 from vk_api.keyboard import VkKeyboard, VkKeyboardColor
 import asyncio
@@ -68,16 +68,34 @@ async def handle_guild_quests(vk, user_id, cmd, payload=None):
         if remaining.total_seconds() < 0:
             minutes = 0
             seconds = 0
+            is_expired = True
         else:
             minutes = int(remaining.total_seconds() // 60)
             seconds = int(remaining.total_seconds() % 60)
+            is_expired = False
+    
         text = f"📌 Активный квест: {quest['name']}\n"
-        text += f"⏱ Осталось: {minutes} мин {seconds} сек\n"
+        if is_expired:
+            text += "⏰ Время истекло! Нажмите 'Сдать квест' для получения награды.\n"
+        else:
+            text += f"⏱ Осталось: {minutes} мин {seconds} сек\n"
         text += f"🎖 Награда: {quest['exp_reward']} опыта, {quest['silver_reward']} серебра"
+    
         keyboard = VkKeyboard()
-        keyboard.add_button('❌ Отменить', color=VkKeyboardColor.NEGATIVE, payload={'cmd': 'guild_quest_cancel'})
+        if is_expired:
+            keyboard.add_button('✅ Сдать квест', color=VkKeyboardColor.POSITIVE, payload={'cmd': 'guild_quest_complete_manual'})
+        else:
+            keyboard.add_button('❌ Отменить', color=VkKeyboardColor.NEGATIVE, payload={'cmd': 'guild_quest_cancel'})
         keyboard.add_button('🏰 В гильдию', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_guild'})
         await send_message(vk, user_id, text, keyboard)
+        return True
+
+    # НОВАЯ КОМАНДА - РУЧНАЯ СДАЧА КВЕСТА
+    elif cmd == 'guild_quest_complete_manual':
+        success, msg = await complete_guild_quest_manual(vk, user_id)
+        await send_message(vk, user_id, msg)
+        from locations import show_guild
+        await show_guild(vk, user_id)
         return True
 
     return False

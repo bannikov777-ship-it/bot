@@ -46,7 +46,8 @@ from handlers import (handle_battle_action, show_mail, show_mail_read, show_mail
 from keyboards import (get_gender_keyboard, get_back_keyboard, get_lore_keyboard, 
                        get_tower_chat_keyboard, get_guild_chat_keyboard, get_mail_keyboard,
                        get_mail_attachment_keyboard)
-from guild_quests import refresh_guild_quests
+# main.py - добавь эти импорты в начало файла (если их нет)
+from guild_quests import check_pending_guild_quests_on_startup, periodic_quest_check
 from admin import admin_codes_menu, admin_create_code, admin_show_codes, is_admin
 
 
@@ -705,7 +706,20 @@ async def main_loop():
         print("❌ Ошибка инициализации. Бот не запущен.")
         return
     
+    # ✅ ПРОВЕРКА ЗАВИСШИХ КВЕСТОВ ПРИ СТАРТЕ
+    try:
+        await check_pending_guild_quests_on_startup(bot.api)
+        print("✅ Проверка зависших квестов выполнена")
+    except Exception as e:
+        print(f"❌ Ошибка при проверке квестов при старте: {e}")
+        traceback.print_exc()
+    
+    # ✅ ЗАПУСК ПЛАНИРОВЩИКА
     asyncio.create_task(scheduler.run())
+    
+    # ✅ ЗАПУСК ПЕРИОДИЧЕСКОЙ ПРОВЕРКИ КВЕСТОВ (каждые 5 минут)
+    asyncio.create_task(periodic_quest_check(bot.api))
+    print("✅ Периодическая проверка квестов запущена (каждые 5 минут)")
     
     while True:
         try:

@@ -5,6 +5,7 @@ from config import DB_NAME
 
 def init_db():
     """Инициализация базы данных"""
+    conn = sqlite3.connect(DB_NAME, timeout=10.0)
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     cur.execute('PRAGMA journal_mode=WAL')

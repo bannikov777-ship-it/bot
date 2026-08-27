@@ -29,6 +29,7 @@ from locations.admin_panel import show_admin_panel
 from locations.scrolls import show_scrolls, use_scroll
 from locations.premium import show_premium_shop, show_premium_buy_prompt, show_premium_buy_confirm, show_premium_buy_execute
 from locations.codes import show_codes_menu, process_code_enter
+from handlers.guild_quests import handle_guild_quests
 
 # Импортируем функции из locations
 from . import (

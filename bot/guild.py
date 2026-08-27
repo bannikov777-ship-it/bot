@@ -214,27 +214,42 @@ def guild_exp_to_next_level(level):
 
 
 def add_guild_exp(guild_id, exp):
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
-    cur.execute('SELECT level, exp FROM guilds WHERE id = ?', (guild_id,))
-    row = cur.fetchone()
-    if not row:
-        conn.close()
-        return
-    level, current_exp = row
-    current_exp += exp
-    while True:
-        needed = guild_exp_to_next_level(level)
-        if current_exp >= needed:
-            current_exp -= needed
-            level += 1
-            cur.execute('UPDATE guilds SET max_members = max_members + 3 WHERE id = ?', (guild_id,))
-        else:
-            break
-    cur.execute('UPDATE guilds SET level = ?, exp = ? WHERE id = ?', (level, current_exp, guild_id))
-    conn.commit()
-    conn.close()
-    return level
+    """Добавление опыта гильдии с обработкой блокировки"""
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        conn.execute('BEGIN IMMEDIATE')  # Блокируем БД
+        cur = conn.cursor()
+        cur.execute('SELECT level, exp FROM guilds WHERE id = ?', (guild_id,))
+        row = cur.fetchone()
+        if not row:
+            conn.rollback()
+            return None
+        
+        level, current_exp = row
+        current_exp += exp
+        leveled = False
+        
+        while True:
+            needed = guild_exp_to_next_level(level)
+            if current_exp >= needed:
+                current_exp -= needed
+                level += 1
+                leveled = True
+                cur.execute('UPDATE guilds SET max_members = max_members + 3 WHERE id = ?', (guild_id,))
+            else:
+                break
+        
+        cur.execute('UPDATE guilds SET level = ?, exp = ? WHERE id = ?', (level, current_exp, guild_id))
+        conn.commit()
+        return level
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        raise e
+    finally:
+        if conn:
+            conn.close()
 
 
 def get_guild_storage(guild_id):
