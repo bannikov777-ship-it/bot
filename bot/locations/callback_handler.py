@@ -1,4 +1,4 @@
-# locations/callback_handler.py - ПОЛНОСТЬЮ ИСПРАВЛЕННЫЙ
+# locations/callback_handler.py - ПОЛНОСТЬЮ ИСПРАВЛЕННЫЙ С РАЗДЕЛЬНОЙ БЛОКИРОВКОЙ
 
 import sqlite3
 import asyncio
@@ -56,6 +56,11 @@ from locations.market import show_market_category, show_market_buy_item
 from locations.tower import show_tower_chat
 from locations.graveyard import back_to_exit as graveyard_back_to_exit
 
+# ===== РАЗДЕЛЬНАЯ БЛОКИРОВКА ДЛЯ РАЗНЫХ ТИПОВ ДЕЙСТВИЙ =====
+battle_lock = {}      # Для боя (1.5 сек)
+nav_lock = {}         # Для навигации (0.3 сек)
+action_lock = {}      # Для остальных действий (0.5 сек)
+
 async def show_tower_chat(vk, user_id):
     """Показ чата группы башни"""
     char = await get_character_async(user_id)
@@ -94,9 +99,61 @@ async def show_sleep_status(vk, user_id):
     await send_message(vk, user_id, f'⏳ До пробуждения осталось: {hours}ч {minutes}м {seconds}с', get_sleep_status_keyboard())
 
 
+# ===== РАЗДЕЛЬНАЯ БЛОКИРОВКА ДЛЯ РАЗНЫХ ТИПОВ ДЕЙСТВИЙ =====
+battle_lock = {}          # Для боя (0.8 сек)
+nav_lock = {}             # Для навигации (0.3 сек)
+action_lock = {}          # Для остальных действий (0.5 сек)
+fight_start_lock = {}     # Для команд, запускающих бой (5 сек)
+
 async def handle_callback(vk, user_id, payload):
-    """Обработчик callback-кнопок"""
+    """Обработчик callback-кнопок с раздельной блокировкой"""
     print(f"📩 handle_callback: payload={payload}")
+    
+    cmd = payload.get('cmd')
+    current_time = time.time()
+    
+    # ---- БЛОКИРОВКА ДЛЯ КОМАНД, ЗАПУСКАЮЩИХ БОЙ (5 сек) ----
+    # ✅ Добавлены все команды, которые запускают бой
+    fight_commands = [
+        'forest', 'forest_wander', 'forest_deep',      # Лес (вход, бродяжничество, углубление)
+        'graveyard', 'graveyard_wander', 'graveyard_deep', # Кладбище (вход, бродяжничество, углубление)
+        'meadow_herbs'                       # Сбор трав
+    ]
+    if cmd in fight_commands:
+        if user_id in fight_start_lock:
+            elapsed = current_time - fight_start_lock[user_id]
+            if elapsed < 5.0:
+                print(f"⏳ Бой уже запускается: слишком быстро ({elapsed:.2f} сек)")
+                await send_message(vk, user_id, "⏳ Вы уже ищете приключения! Подождите немного...")
+                return
+        fight_start_lock[user_id] = current_time
+    
+    # ---- БОЙ (0.8 сек) ----
+    if cmd and cmd.startswith('battle_'):
+        if user_id in battle_lock:
+            elapsed = current_time - battle_lock[user_id]
+            if elapsed < 0.8:
+                print(f"⏳ Бой: слишком быстро ({elapsed:.2f} сек)")
+                return
+        battle_lock[user_id] = current_time
+    
+    # ---- НАВИГАЦИЯ (0.3 сек) ----
+    elif cmd and cmd.startswith('go_'):
+        if user_id in nav_lock:
+            elapsed = current_time - nav_lock[user_id]
+            if elapsed < 0.3:
+                print(f"⏳ Навигация: слишком быстро ({elapsed:.2f} сек)")
+                return
+        nav_lock[user_id] = current_time
+    
+    # ---- ОСТАЛЬНОЕ (0.5 сек) ----
+    else:
+        if user_id in action_lock:
+            elapsed = current_time - action_lock[user_id]
+            if elapsed < 0.5:
+                print(f"⏳ Слишком быстро ({elapsed:.2f} сек)")
+                return
+        action_lock[user_id] = current_time
 
     if 'gender' in payload:
         gender = payload['gender']
@@ -525,6 +582,18 @@ async def handle_callback(vk, user_id, payload):
         await show_guild_list(vk, user_id)
         return
 
+    if cmd == 'guild_apply_prompt':
+        from locations.guild import show_guild_apply_prompt
+        await show_guild_apply_prompt(vk, user_id)
+        return
+
+    if cmd == 'guild_apply_confirm':
+        guild_id = payload.get('guild_id')
+        if guild_id:
+            from locations.guild import show_guild_apply_confirm
+            await show_guild_apply_confirm(vk, user_id, guild_id)
+        return
+
     if cmd == 'guild_create':
         await send_message(vk, user_id, 'Введите название гильдии (макс. 30 символов):')
         await update_user_async(user_id, state='awaiting_guild_name', context={'parent_state': 'guild'})
@@ -566,6 +635,22 @@ async def handle_callback(vk, user_id, payload):
     if cmd == 'guild_applications':
         from locations.guild import show_guild_applications
         await show_guild_applications(vk, user_id)
+        return
+
+    # ✅ ДОБАВЛЕНО: принятие заявки по ID
+    if cmd == 'guild_accept_app':
+        app_id = payload.get('app_id')
+        if app_id:
+            from locations.guild import show_guild_accept_app
+            await show_guild_accept_app(vk, user_id, app_id)
+        return
+
+    # ✅ ДОБАВЛЕНО: отклонение заявки по ID
+    if cmd == 'guild_reject_app':
+        app_id = payload.get('app_id')
+        if app_id:
+            from locations.guild import show_guild_reject_app
+            await show_guild_reject_app(vk, user_id, app_id)
         return
 
     if cmd == 'guild_members':
@@ -683,6 +768,17 @@ async def handle_callback(vk, user_id, payload):
     if cmd == 'guild_list_refresh':
         from locations.guild import show_guild_list
         await show_guild_list(vk, user_id, 1)
+        return
+
+    # ---- ЗАЯВКИ В ГИЛЬДИЮ (по ID) ----
+    if cmd == 'guild_accept_prompt':
+        await send_message(vk, user_id, '📝 Введите ID заявки для принятия:')
+        await update_user_async(user_id, state='awaiting_guild_accept', context={'parent_state': 'guild_applications'})
+        return
+
+    if cmd == 'guild_reject_prompt':
+        await send_message(vk, user_id, '📝 Введите ID заявки для отклонения:')
+        await update_user_async(user_id, state='awaiting_guild_reject', context={'parent_state': 'guild_applications'})
         return
 
     # ---- ТАВЕРНА ----
