@@ -1,78 +1,177 @@
-# locations/tower.py
-import asyncio
-import time
+# locations/tavern.py
 from core import get_character_async, update_user_async, send_message, get_user_async
-from tower import get_tower_party, get_tower_boss, start_tower_battle, leave_tower, rest_in_tower
-from keyboards import get_back_keyboard, get_sleep_status_keyboard
+from keyboards import get_back_keyboard
 from vk_api.keyboard import VkKeyboard, VkKeyboardColor
+from scheduler import scheduler
+import time
+import sqlite3
+from config import DB_NAME
 
-TOWER_IMAGE = 'photo-240828623_456239325'
+TAVERN_IMAGE = 'photo-240828623_456239032'
 
-async def show_tower(vk, user_id):
-    """Показ башни"""
-    char = await get_character_async(user_id)
-    if not char:
-        await send_message(vk, user_id, 'Сначала создайте персонажа.', get_back_keyboard('луг'))
-        return
-    party = await asyncio.to_thread(get_tower_party, char['id'])
-    if not party:
-        keyboard = VkKeyboard()
-        keyboard.add_button('🏰 Создать группу', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'tower_create_party'})
-        keyboard.add_button('🌿 На луг', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_meadow'})  # ✅ исправлено
-        await send_message(vk, user_id, '🗼 Вы у входа в Башню.\n\nВы не состоите в группе. Создайте её, чтобы начать.', keyboard)
-    else:
-        from core import get_character_by_id_async
-        leader = await get_character_by_id_async(party['leader_id'])
-        members_text = "\n".join([f"• {(await get_character_by_id_async(m))['name']}" for m in party['members']])
-        is_leader = party['leader_id'] == char['id']
-        text = f"🗼 Башня – этаж {party['current_floor']}/10\n\n👑 Лидер: {leader['name']}\n👥 Участники:\n{members_text}\n"
-        keyboard = VkKeyboard()
-        keyboard.add_button('💬 Чат группы', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'tower_chat_show'})
-        if is_leader:
-            keyboard.add_button('⚔️ Начать бой', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'tower_start_battle'})
+def get_tavern_keyboard():
+    """Клавиатура таверны - 2 ряда"""
+    from vk_api.keyboard import VkKeyboard, VkKeyboardColor
+    keyboard = VkKeyboard()
+    
+    # Первый ряд - 2 кнопки
+    keyboard.add_button('🍽️ Поесть', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'tavern_food'})
+    keyboard.add_button('😴 Снять комнату', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'tavern_room'})
+    keyboard.add_line()
+    
+    # Второй ряд - 2 кнопки
+    keyboard.add_button('📜 Квесты', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'tavern_quests'})
+    keyboard.add_button('🗣️ Слухи', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'tavern_rumors'})
+    keyboard.add_line()
+    
+    # Третий ряд - 1 кнопка (назад в город)
+    keyboard.add_button('🏙️ В город', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_city'})
+    
+    return keyboard
+
+def get_food_keyboard():
+    """Клавиатура меню еды - каждая кнопка на новой строке"""
+    from vk_api.keyboard import VkKeyboard, VkKeyboardColor
+    keyboard = VkKeyboard()
+    
+    food_items = [
+        ('🍞 Хлеб (+10% HP)', 10, 10),
+        ('🍖 Мясо (+25% HP)', 25, 30),
+        ('🍲 Суп (+40% HP)', 40, 60),
+        ('🐟 Рыба (+50% HP)', 50, 80),
+        ('🥩 Стейк (+75% HP)', 75, 120),
+        ('🍗 Жаркое (+100% HP)', 100, 200),
+    ]
+    
+    for name, percent, price in food_items:
+        keyboard.add_button(
+            f'{name} ({price}💰)',
+            color=VkKeyboardColor.PRIMARY,
+            payload={'cmd': 'buy_food', 'percent': percent, 'price': price}
+        )
         keyboard.add_line()
-        keyboard.add_button('🚪 Покинуть группу', color=VkKeyboardColor.NEGATIVE, payload={'cmd': 'tower_leave'})
-        keyboard.add_button('🌿 На луг', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_meadow'})  # ✅ исправлено
-        await send_message(vk, user_id, text, keyboard)
-    user_data = await get_user_async(user_id)
-    context = user_data['context']
-    context['parent_state'] = 'meadow'
-    await update_user_async(user_id, state='tower', context=context)
+    
+    keyboard.add_button('🍺 В таверну', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_tavern'})
+    
+    return keyboard
 
+def get_sleep_keyboard():
+    """Клавиатура выбора комнаты - каждая кнопка на новой строке (БЕЗ ПЛАТЫ)"""
+    from vk_api.keyboard import VkKeyboard, VkKeyboardColor
+    keyboard = VkKeyboard()
+    
+    # Бесплатно, время 1-3 часа
+    rooms = [
+        ('🛏️ 1 час (+20% HP)', 1, 20),
+        ('🛏️ 2 часа (+50% HP)', 2, 50),
+        ('🛏️ 3 часа (+100% HP)', 3, 100),
+    ]
+    
+    for name, hours, percent in rooms:
+        keyboard.add_button(
+            f'{name} (бесплатно)',
+            color=VkKeyboardColor.PRIMARY,
+            payload={'cmd': 'sleep', 'hours': hours, 'percent': percent, 'price': 0}
+        )
+        keyboard.add_line()
+    
+    keyboard.add_button('🍺 В таверну', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_tavern'})
+    
+    return keyboard
 
-async def show_tower_chat(vk, user_id):
-    """Показ чата группы башни"""
+def get_sleep_status_keyboard():
+    """Клавиатура статуса сна"""
+    from vk_api.keyboard import VkKeyboard, VkKeyboardColor
+    keyboard = VkKeyboard()
+    
+    keyboard.add_button('🔄 Проверить', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'sleep_check'})
+    keyboard.add_button('❌ Проснуться', color=VkKeyboardColor.NEGATIVE, payload={'cmd': 'sleep_cancel'})
+    keyboard.add_line()
+    
+    keyboard.add_button('🍺 В таверну', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_tavern'})
+    
+    return keyboard
+
+async def show_tavern(vk, user_id):
+    """Показ таверны"""
     char = await get_character_async(user_id)
     if not char:
         await send_message(vk, user_id, 'Сначала создайте персонажа.', get_back_keyboard('город'))
         return
     
-    party = await asyncio.to_thread(get_tower_party, char['id'])
-    if not party:
-        await send_message(vk, user_id, 'Вы не в группе башни.', get_back_keyboard('башня'))
-        await show_tower(vk, user_id)
-        return
+    text = f"🍺 Таверна «Пьяный тролль»\n\nВаши 💰: {char['silver']}\nВаше ❤️: {char['hp']}/{char['max_hp']}\n\nЧто желаешь?"
     
-    from keyboards import get_tower_chat_keyboard
-    keyboard = get_tower_chat_keyboard()
+    await send_message(vk, user_id, text, get_tavern_keyboard(), attachment=TAVERN_IMAGE)
     
-    await send_message(vk, user_id, '💬 Чат группы башни\n\nНапишите сообщение, и оно будет отправлено всем участникам группы.', keyboard)
     user_data = await get_user_async(user_id)
     context = user_data['context']
-    context['parent_state'] = 'tower'
-    await update_user_async(user_id, state='tower_chat', context=context)
+    context['parent_state'] = 'city'
+    await update_user_async(user_id, state='tavern', context=context)
 
-
-async def show_sleep_status(vk, user_id):
-    """Показ статуса сна"""
+async def show_tavern_food(vk, user_id):
+    """Показ меню еды"""
+    char = await get_character_async(user_id)
+    if not char:
+        await send_message(vk, user_id, 'Сначала создайте персонажа.', get_back_keyboard('город'))
+        return
+    
+    text = f"🍖 Выберите еду:\n\nВаши 💰: {char['silver']}\nВаше ❤️: {char['hp']}/{char['max_hp']}"
+    
+    await send_message(vk, user_id, text, get_food_keyboard())
+    
     user_data = await get_user_async(user_id)
     context = user_data['context']
-    sleep_end_time = context.get('sleep_end_time')
-    if not sleep_end_time:
-        await send_message(vk, user_id, 'Вы сейчас не спите.', get_back_keyboard('таверну'))
+    context['parent_state'] = 'tavern'
+    await update_user_async(user_id, state='tavern_food', context=context)
+
+async def show_tavern_room(vk, user_id):
+    """Показ комнаты (бесплатно)"""
+    char = await get_character_async(user_id)
+    if not char:
+        await send_message(vk, user_id, 'Сначала создайте персонажа.', get_back_keyboard('город'))
         return
-    remaining = max(0, sleep_end_time - time.time())
-    hours = int(remaining // 3600)
-    minutes = int((remaining % 3600) // 60)
-    seconds = int(remaining % 60)
-    await send_message(vk, user_id, f'⏳ До пробуждения осталось: {hours}ч {minutes}м {seconds}с', get_sleep_status_keyboard())
+    
+    text = f"🛏 Выберите время отдыха:\n\n💤 Восстановление бесплатно!"
+    
+    await send_message(vk, user_id, text, get_sleep_keyboard())
+    
+    user_data = await get_user_async(user_id)
+    context = user_data['context']
+    context['parent_state'] = 'tavern'
+    await update_user_async(user_id, state='tavern_room', context=context)
+
+async def restore_after_sleep(vk, user_id, percent):
+    """Восстановление после сна"""
+    char = await get_character_async(user_id)
+    if not char:
+        return
+    
+    max_hp = char['max_hp']
+    max_mana = char['max_mana']
+    max_stamina = char['max_stamina']
+    
+    restore_hp = int(max_hp * percent / 100)
+    restore_mana = int(max_mana * percent / 100)
+    restore_stamina = int(max_stamina * percent / 100)
+    
+    new_hp = min(max_hp, char['hp'] + restore_hp)
+    new_mana = min(max_mana, char['mana'] + restore_mana)
+    new_stamina = min(max_stamina, char['stamina'] + restore_stamina)
+    
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute('UPDATE characters SET hp = ?, mana = ?, stamina = ? WHERE id = ?', 
+                (new_hp, new_mana, new_stamina, char['id']))
+    conn.commit()
+    conn.close()
+    
+    user_data = await get_user_async(user_id)
+    context = user_data['context']
+    context.pop('sleep_task_id', None)
+    context.pop('sleep_end_time', None)
+    await update_user_async(user_id, context=context)
+    
+    await send_message(vk, user_id,
+        f'😴 Просыпайтесь! Вы восстановили:\n❤️ {restore_hp} HP\n💧 {restore_mana} MP\n⚡ {restore_stamina} Stamina',
+        get_back_keyboard('таверну'))
+    await show_tavern(vk, user_id)
