@@ -4,7 +4,7 @@ import asyncio
 from core import get_character_async, update_user_async, send_message, update_max_forest_depth, get_user_async
 from battle import start_battle, delay_with_message
 from keyboards import get_back_keyboard
-from .base import FOREST_IMAGE, FOREST_DEEP_IMAGE, FOREST_WANDER_IMAGE, FOREST_EXIT_IMAGE
+from .base import FOREST_IMAGE, FOREST_DEEP_IMAGE, FOREST_WANDER_IMAGE, FOREST_EXIT_IMAGE, delay_action
 
 async def show_forest(vk, user_id):
     """Показ леса"""
@@ -31,13 +31,19 @@ async def show_forest(vk, user_id):
     await start_battle(vk, user_id, 'forest', depth)
 
 async def forest_deep(vk, user_id):
-    """Углубление в лес"""
-    # Показываем картинку углубления
-    await send_message(vk, user_id, "🌲 Вы углубляетесь в лес...", attachment=FOREST_DEEP_IMAGE)
+    """Углубление в лес - с задержкой и блокировкой"""
+    char = await get_character_async(user_id)
+    if not char:
+        await send_message(vk, user_id, 'Сначала создайте персонажа.', get_back_keyboard('город'))
+        return
     
-    # Задержка 3-8 секунд
-    await asyncio.sleep(random.randint(3, 8))
-    
+    # Проверяем блокировку и запускаем с задержкой
+    success = await delay_action(vk, user_id, 'forest_deep', delay_range=(3, 8))
+    if not success:
+        return
+
+async def forest_deep_execute(vk, user_id):
+    """Выполнение углубления в лес (после задержки)"""
     user_data = await get_user_async(user_id)
     context = user_data.get('context', {}) if isinstance(user_data, dict) else {}
     old_depth = context.get('forest_depth', 0)
@@ -51,13 +57,18 @@ async def forest_deep(vk, user_id):
     await start_battle(vk, user_id, 'forest', depth)
 
 async def forest_wander(vk, user_id):
-    """Бродяжничество в лесу"""
-    # Показываем картинку поиска
-    await send_message(vk, user_id, "🔍 Вы ищете следы в лесу...", attachment=FOREST_WANDER_IMAGE)
+    """Бродяжничество в лесу - с задержкой и блокировкой"""
+    char = await get_character_async(user_id)
+    if not char:
+        await send_message(vk, user_id, 'Сначала создайте персонажа.', get_back_keyboard('город'))
+        return
     
-    # Задержка 3-8 секунд
-    await asyncio.sleep(random.randint(3, 8))
-    
+    success = await delay_action(vk, user_id, 'forest_wander', delay_range=(3, 8))
+    if not success:
+        return
+
+async def forest_wander_execute(vk, user_id):
+    """Выполнение бродяжничества в лесу (после задержки)"""
     user_data = await get_user_async(user_id)
     context = user_data.get('context', {}) if isinstance(user_data, dict) else {}
     depth = context.get('forest_depth', 0)
