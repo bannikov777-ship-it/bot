@@ -40,6 +40,89 @@ NAVIGATION_DELAYS = {
     'admin_panel': 1.0,    # Админ-панель
 }
 
+# ===== БЛОКИРОВКА ДЕЙСТВИЙ С ЗАДЕРЖКОЙ (лес, кладбище) =====
+# Словарь для хранения состояния действий с задержкой
+action_lock = {}
+
+async def delay_action(vk, user_id, action_type, delay_range=(2, 5)):
+    """
+    Блокировка действий с задержкой
+    
+    Args:
+        vk: объект VK API
+        user_id: ID пользователя
+        action_type: тип действия ('forest_deep', 'forest_wander', 'graveyard_deep', 'graveyard_wander')
+        delay_range: диапазон задержки в секундах (min, max)
+    """
+    # Проверяем, не выполняется ли уже действие
+    if user_id in action_lock and action_lock[user_id].get('active', False):
+        await send_message(vk, user_id, "⏳ Вы уже выполняете действие! Подождите немного...")
+        return False
+    
+    # Создаём задачу
+    task = asyncio.create_task(_do_action_with_delay(vk, user_id, action_type, delay_range))
+    
+    # Сохраняем состояние
+    action_lock[user_id] = {
+        'active': True,
+        'task': task,
+        'type': action_type
+    }
+    
+    # Добавляем коллбэк для очистки
+    task.add_done_callback(lambda t: _cleanup_action(user_id))
+    
+    return True
+
+async def _do_action_with_delay(vk, user_id, action_type, delay_range):
+    """Внутренняя функция выполнения действия с задержкой"""
+    try:
+        # Получаем задержку
+        delay = random.uniform(delay_range[0], delay_range[1])
+        
+        # Отправляем сообщение о начале
+        messages = {
+            'forest_deep': "🌲 Вы углубляетесь в лес...",
+            'forest_wander': "🔍 Вы ищете следы в лесу...",
+            'graveyard_deep': "🕳️ Вы углубляетесь на кладбище...",
+            'graveyard_wander': "🔍 Вы ищете следы на кладбище..."
+        }
+        
+        await send_message(vk, user_id, messages.get(action_type, "⏳ Выполняется..."))
+        
+        # Задержка
+        await asyncio.sleep(delay)
+        
+        # После задержки выполняем действие
+        if action_type == 'forest_deep':
+            from locations.forest import forest_deep_execute
+            await forest_deep_execute(vk, user_id)
+        elif action_type == 'forest_wander':
+            from locations.forest import forest_wander_execute
+            await forest_wander_execute(vk, user_id)
+        elif action_type == 'graveyard_deep':
+            from locations.graveyard import graveyard_deep_execute
+            await graveyard_deep_execute(vk, user_id)
+        elif action_type == 'graveyard_wander':
+            from locations.graveyard import graveyard_wander_execute
+            await graveyard_wander_execute(vk, user_id)
+            
+    except asyncio.CancelledError:
+        await send_message(vk, user_id, "❌ Действие отменено.")
+    except Exception as e:
+        print(f"❌ Ошибка при выполнении действия {action_type}: {e}")
+        import traceback
+        traceback.print_exc()
+        await send_message(vk, user_id, f'❌ Ошибка: {e}')
+    finally:
+        _cleanup_action(user_id)
+
+def _cleanup_action(user_id):
+    """Очистка состояния действия"""
+    if user_id in action_lock:
+        action_lock[user_id]['active'] = False
+
+
 async def delay_navigation(vk, user_id, target_state):
     """
     Задержка перед навигацией с отправкой статуса
