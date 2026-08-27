@@ -80,15 +80,32 @@ async def _do_action_with_delay(vk, user_id, action_type, delay_range):
         # Получаем задержку
         delay = random.uniform(delay_range[0], delay_range[1])
         
-        # Отправляем сообщение о начале
-        messages = {
-            'forest_deep': "🌲 Вы углубляетесь в лес...",
-            'forest_wander': "🔍 Вы ищете следы в лесу...",
-            'graveyard_deep': "🕳️ Вы углубляетесь на кладбище...",
-            'graveyard_wander': "🔍 Вы ищете следы на кладбище..."
+        # Картинки и сообщения для разных действий
+        action_data = {
+            'forest_deep': {
+                'message': "🌲 Вы углубляетесь в лес...",
+                'image': FOREST_DEEP_IMAGE
+            },
+            'forest_wander': {
+                'message': "🔍 Вы ищете следы в лесу...",
+                'image': FOREST_WANDER_IMAGE
+            },
+            'graveyard_deep': {
+                'message': "🕳️ Вы углубляетесь на кладбище...",
+                'image': GRAVEYARD_DEEP_IMAGE
+            },
+            'graveyard_wander': {
+                'message': "🔍 Вы ищете следы на кладбище...",
+                'image': GRAVEYARD_WANDER_IMAGE
+            }
         }
         
-        await send_message(vk, user_id, messages.get(action_type, "⏳ Выполняется..."))
+        data = action_data.get(action_type, {})
+        message = data.get('message', "⏳ Выполняется...")
+        image = data.get('image')
+        
+        # Отправляем сообщение с картинкой
+        await send_message(vk, user_id, message, attachment=image)
         
         # Задержка
         await asyncio.sleep(delay)
