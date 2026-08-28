@@ -1,4 +1,5 @@
 # core/database.py (полный исправленный)
+import os
 import sqlite3
 import json
 from config import DB_NAME
