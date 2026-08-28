@@ -435,7 +435,7 @@ def upgrade_item(player_item_id, crystal_id=None):
         conn.close()
         return None, "❌ Предмет уже имеет максимальный уровень заточки (+10)"
 
-    # ---- НОВАЯ ФОРМУЛА СТОИМОСТИ: 100 + (уровень заточки × 250) × множитель редкости ----
+    # ---- ПРАВИЛЬНАЯ ФОРМУЛА СТОИМОСТИ ----
     rarity_price_mult = {
         1: 1.0,    # ⚪ Обычный
         2: 1.5,    # 🟢 Необычный
@@ -444,9 +444,7 @@ def upgrade_item(player_item_id, crystal_id=None):
         5: 6.0     # 🟠 Легендарный
     }
     
-    # Базовая стоимость: 100 + (уровень заточки × 250)
     base_price = 100 + upgrade_level * 250
-    # Итоговая стоимость с учётом редкости
     price = int(base_price * rarity_price_mult.get(rarity, 1.0))
 
     cur.execute('SELECT silver FROM characters WHERE id = ?', (owner_id,))
@@ -455,13 +453,23 @@ def upgrade_item(player_item_id, crystal_id=None):
         conn.close()
         return None, f"❌ Недостаточно серебра! Нужно {price}💰"
 
-    # ---- ШАНС ЗАТОЧКИ ----
-    if upgrade_level < 1:
+    # ---- ПРАВИЛЬНЫЙ ШАНС ЗАТОЧКИ ----
+    if upgrade_level < 4:
         base_chance = 100
-    elif upgrade_level < 3:
-        base_chance = 90 - (upgrade_level - 1) * 10
-    else:
-        base_chance = max(15, 70 - (upgrade_level - 1) * 10)
+    elif upgrade_level == 4:
+        base_chance = 90
+    elif upgrade_level == 5:
+        base_chance = 80
+    elif upgrade_level == 6:
+        base_chance = 70
+    elif upgrade_level == 7:
+        base_chance = 60
+    elif upgrade_level == 8:
+        base_chance = 50
+    elif upgrade_level == 9:
+        base_chance = 40
+    else:  # upgrade_level >= 10
+        base_chance = 30
 
     crystal_bonus = 0
     crystal_name = "без кристалла"

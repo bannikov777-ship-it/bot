@@ -1,4 +1,4 @@
-# core/async_wrappers.py
+# core/async_wrappers.py (ПОЛНЫЙ ИСПРАВЛЕННЫЙ)
 import asyncio
 import sqlite3
 from config import DB_NAME
@@ -153,3 +153,56 @@ def sell_all_herbs(owner_id):
     conn.commit()
     conn.close()
     return total_silver, f"Вы продали все травы и получили {total_silver} серебра."
+
+
+# ✅ ДОБАВЛЯЕМ ФУНКЦИЮ ДЛЯ РЕСУРСОВ (ТРОФЕЕВ)
+def get_player_resources(owner_id):
+    """Получение ресурсов (трофеев) игрока"""
+    import sqlite3
+    from config import DB_NAME
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute('''
+        SELECT r.id, r.name, r.icon, r.quantity
+        FROM player_resources pr
+        JOIN resource_templates r ON pr.resource_id = r.id
+        WHERE pr.owner_id = ? AND pr.quantity > 0
+    ''', (owner_id,))
+    rows = cur.fetchall()
+    conn.close()
+    
+    resources = []
+    for row in rows:
+        resources.append({
+            'id': row[0],
+            'name': row[1],
+            'icon': row[2],
+            'quantity': row[3]
+        })
+    return resources
+
+# Функции для работы с ресурсами (трофеями)
+def get_player_resources(owner_id):
+    """Получение ресурсов (трофеев) игрока"""
+    import sqlite3
+    from config import DB_NAME
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute('''
+        SELECT r.id, r.name, r.icon, pr.quantity
+        FROM player_resources pr
+        JOIN resource_templates r ON pr.resource_id = r.id
+        WHERE pr.owner_id = ? AND pr.quantity > 0
+    ''', (owner_id,))
+    rows = cur.fetchall()
+    conn.close()
+    
+    resources = []
+    for row in rows:
+        resources.append({
+            'id': row[0],
+            'name': row[1],
+            'icon': row[2],
+            'quantity': row[3]
+        })
+    return resources

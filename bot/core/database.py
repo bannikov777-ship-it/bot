@@ -4,14 +4,33 @@ import json
 from config import DB_NAME
 
 def init_db():
-    """Инициализация базы данных"""
+    """Инициализация базы данных (ТОЛЬКО если её нет)"""
+    
+    # ✅ ПРОВЕРЯЕМ: существует ли БД
+    if os.path.exists(DB_NAME):
+        print(f"📁 База данных уже существует: {DB_NAME}")
+        
+        # Проверяем, что таблицы созданы
+        try:
+            conn = sqlite3.connect(DB_NAME)
+            cur = conn.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='characters'")
+            if cur.fetchone():
+                print("✅ Таблицы уже существуют, пропускаем инициализацию")
+                conn.close()
+                return
+            conn.close()
+        except:
+            pass
+        
+        print("⚠️ База данных есть, но таблицы отсутствуют. Создаём...")
+    
+    # Если БД нет или таблиц нет - создаём
     conn = sqlite3.connect(DB_NAME, timeout=10.0)
-    conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     cur.execute('PRAGMA journal_mode=WAL')
     cur.execute('PRAGMA busy_timeout=5000')
     cur.execute('PRAGMA synchronous=NORMAL')
-    
     # users
     cur.execute('''
         CREATE TABLE IF NOT EXISTS users (

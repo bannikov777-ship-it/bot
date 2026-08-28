@@ -16,7 +16,7 @@ from .async_wrappers import (
     get_character_by_id_async, recalc_stats_async,
     get_player_consumables, get_player_crystals, buy_consumable,
     use_consumable, get_consumable_templates, get_player_herbs,
-    add_herb, sell_all_herbs
+    add_herb, sell_all_herbs, get_player_resources
 )
 
 # Импортируем функции из items.py

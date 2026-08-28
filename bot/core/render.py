@@ -1,9 +1,8 @@
 # core/render.py
 from .character import get_item_prefix, get_character_by_id
 from .stats import CLASS_BASE_STATS, CLASS_GROWTH, NEUTRAL_STATS, NEUTRAL_GROWTH
-from .async_wrappers import get_player_consumables, get_player_herbs
+from .async_wrappers import get_player_consumables, get_player_herbs, get_player_resources  # ✅ Добавлен get_player_resources
 from utils import exp_to_next_level
-from resources import get_player_resources
 
 GENDER_IMAGES = {
     'male': 'photo-240828623_456239242',

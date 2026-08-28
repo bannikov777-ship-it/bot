@@ -163,47 +163,86 @@ async def send_battle_status_from_context(vk, user_id, context):
         await send_message(vk, user_id, status, None, attachment=monster.get('image'))
 
 async def show_battle_potions(vk, user_id):
+    """Показ зелий для использования в бою (только HP, MP, Stamina)"""
     char = await get_character_async(user_id)
     if not char:
         return
-    consumables = get_player_consumables(char['id'])
-    if not consumables:
-        await send_message(vk, user_id, 'У вас нет зелий!', get_battle_keyboard(char['class']))
+    
+    # Получаем все расходники
+    all_consumables = get_player_consumables(char['id'])
+    
+    # ✅ Фильтруем: только зелья (HP, MP, Stamina)
+    potions = []
+    for c in all_consumables:
+        if c['restore_type'] in ('hp', 'mana', 'stamina'):
+            potions.append(c)
+        # Кристаллы (crystal) и свитки (curse_remove, scroll) пропускаем
+    
+    if not potions:
+        await send_message(vk, user_id, '❌ У вас нет зелий для боя!', get_battle_keyboard(char['class']))
         return
+    
     keyboard = VkKeyboard()
-    for c in consumables:
-        label = f"{c['icon']} {c['name']} (x{c['quantity']})"
+    for c in potions:
+        label = f"{c['icon']} {c['name']} ({c['restore_percent']}%) x{c['quantity']}"
         keyboard.add_button(label, color=VkKeyboardColor.PRIMARY,
                             payload={'cmd': 'battle_use_potion', 'template_id': c['id']})
         keyboard.add_line()
-    keyboard.add_button('🔙 Назад', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'battle_back'})
+    
+    keyboard.add_button('🔙 Назад в бой', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'battle_back'})
+    
     await send_message(vk, user_id, '💊 Выберите зелье для использования:', keyboard)
+    
     user_data = await get_user_async(user_id)
     context = user_data['context']
     context['battle_potion_menu'] = True
     await update_user_async(user_id, context=context)
 
+
 async def process_battle_action(vk, user_id, action, payload=None):
+    """Обработка боевых действий"""
     user_data = await get_user_async(user_id)
     context = user_data['context']
     
+    # Если в меню зелий
     if context.get('battle_potion_menu'):
         if action == 'use_potion' or action == 'battle_use_potion':
             template_id = payload.get('template_id') if payload else None
             if not template_id:
-                await send_message(vk, user_id, 'Ошибка: не выбран шаблон зелья.')
+                await send_message(vk, user_id, '❌ Ошибка: не выбран шаблон зелья.')
                 return
+            
             char = await get_character_async(user_id)
             if not char:
                 return
+            
+            # ✅ Проверяем, что это зелье (не кристалл и не свиток)
+            conn = sqlite3.connect(DB_NAME)
+            cur = conn.cursor()
+            cur.execute('SELECT restore_type FROM consumable_templates WHERE id = ?', (template_id,))
+            row = cur.fetchone()
+            conn.close()
+            
+            if not row or row[0] not in ('hp', 'mana', 'stamina'):
+                await send_message(vk, user_id, '❌ Это не зелье! Используйте зелья HP, MP или Stamina.', 
+                                   get_battle_keyboard(char['class']))
+                context.pop('battle_potion_menu', None)
+                await update_user_async(user_id, context=context)
+                await send_battle_status(vk, user_id)
+                return
+            
+            # Используем зелье
             effect, error = use_consumable(char['id'], template_id)
             if error:
                 await send_message(vk, user_id, f'❌ {error}', get_battle_keyboard(char['class']))
                 return
+            
             restore_type, percent = effect
             battle = context.get('battle')
             if not battle:
                 return
+            
+            # Восстанавливаем
             if restore_type == 'hp':
                 restore = round(battle['player_max_hp'] * percent / 100)
                 battle['player_hp'] = min(battle['player_max_hp'], battle['player_hp'] + restore)
@@ -216,17 +255,27 @@ async def process_battle_action(vk, user_id, action, payload=None):
                 restore = round(battle['player_max_stamina'] * percent / 100)
                 battle['player_stamina'] = min(battle['player_max_stamina'], battle['player_stamina'] + restore)
                 log = f"💊 Вы восстановили {restore} выносливости."
+            else:
+                await send_message(vk, user_id, '❌ Неизвестный тип зелья.')
+                return
+            
             battle['log'].append(log)
             context.pop('battle_potion_menu', None)
             await update_user_async(user_id, context=context)
+            
+            # Сохраняем в БД
             conn = sqlite3.connect(DB_NAME)
             cur = conn.cursor()
             cur.execute('UPDATE characters SET hp=?, mana=?, stamina=? WHERE id=?', 
                         (battle['player_hp'], battle['player_mana'], battle['player_stamina'], char['id']))
             conn.commit()
             conn.close()
-            await send_battle_status(vk, user_id)
+            
+            # Атака монстра после использования зелья
+            await monster_attacks(vk, user_id, battle)
+            await save_battle_and_send(vk, user_id, context)
             return
+            
         elif action == 'back':
             context.pop('battle_potion_menu', None)
             await update_user_async(user_id, context=context)

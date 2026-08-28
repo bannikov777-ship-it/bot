@@ -1,10 +1,11 @@
-# locations/inventory.py (исправленный - ID в начале, статы остаются)
+# locations/inventory.py (ПОЛНЫЙ ИСПРАВЛЕННЫЙ)
 
 import sqlite3
 from config import DB_NAME
 from core import (
     get_character_async, update_user_async, send_message, get_user_async,
-    get_inventory, get_equipment, get_player_consumables, equip_item, unequip_item, recalc_stats_async
+    get_inventory, get_equipment, get_player_consumables, equip_item, unequip_item, recalc_stats_async,
+    get_player_herbs, get_player_resources  # ✅ Добавлены импорты
 )
 from keyboards import get_back_keyboard
 from vk_api.keyboard import VkKeyboard, VkKeyboardColor
@@ -87,7 +88,6 @@ async def show_inventory(vk, user_id):
             stars = get_rarity_stars(item.get('rarity', 1))
             upgrade = f" [+{item.get('upgrade_level', 0)}]" if item.get('upgrade_level', 0) > 0 else ""
             
-            # ✅ ID в начале, статы в конце
             if detail:
                 text += f"  {icon} {slot_name}: 📌ID:{item['id']} {item['icon']} {item['name']} (Ур.{item.get('level', 1)}){upgrade} {rarity_icon}{stars} ({detail})\n"
             else:
@@ -108,7 +108,6 @@ async def show_inventory(vk, user_id):
             upgrade = f" [+{item.get('upgrade_level', 0)}]" if item.get('upgrade_level', 0) > 0 else ""
             qty_text = f" (x{item['quantity']})" if item.get('quantity', 1) > 1 else ""
             
-            # ✅ ID в начале, статы в конце
             if detail:
                 text += f"  📌ID:{item['id']} {item['icon']} {item['name']} (Ур.{item.get('level', 1)}){upgrade} {rarity_icon}{stars} ({detail}){qty_text}\n"
             else:
@@ -145,16 +144,23 @@ async def show_inventory(vk, user_id):
     else:
         text += "  Нет расходников\n"
     
-    # Ресурсы/Травы (если есть)
-    try:
-        from core import get_player_resources
-        resources = get_player_resources(char['id'])
-        if resources:
-            text += "\n🎁 Ресурсы:\n"
-            for r in resources:
-                text += f"  {r['icon']} {r['name']} (x{r['quantity']})\n"
-    except:
-        pass
+    # ✅ ТРАВЫ
+    herbs = get_player_herbs(char['id'])
+    text += "\n🌿 Травы:\n"
+    if herbs:
+        for h in herbs:
+            text += f"  {h['icon']} {h['name']} (x{h['quantity']})\n"
+    else:
+        text += "  Нет трав\n"
+    
+    # ✅ РЕСУРСЫ (ТРОФЕИ)
+    resources = get_player_resources(char['id'])
+    text += "\n🎁 Ресурсы (трофеи):\n"
+    if resources:
+        for r in resources:
+            text += f"  {r['icon']} {r['name']} (x{r['quantity']})\n"
+    else:
+        text += "  Нет ресурсов\n"
     
     # Клавиатура
     keyboard = VkKeyboard()

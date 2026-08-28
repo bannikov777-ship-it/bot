@@ -54,24 +54,29 @@ from admin import admin_codes_menu, admin_create_code, admin_show_codes, is_admi
 logging.basicConfig(level=logging.INFO)
 
 def initialize_database():
-    """Инициализация базы данных"""
-    print("▶ Вызов init_db()...")
-    try:
-        init_db()
-        print("✅ init_db() завершён")
-    except Exception as e:
-        print(f"❌ Ошибка при инициализации БД: {e}")
-        traceback.print_exc()
-        return False
+    """Инициализация базы данных (только если её нет)"""
     
-    print("▶ Вызов init_items_db()...")
-    try:
-        init_items_db()
-        print("✅ init_items_db() завершён")
-    except Exception as e:
-        print(f"❌ Ошибка init_items_db: {e}")
-        return False
+    # ✅ Проверяем, есть ли БД
+    if os.path.exists(DB_NAME):
+        print(f"📁 База данных уже существует: {DB_NAME}")
+        # Проверяем таблицы
+        try:
+            conn = sqlite3.connect(DB_NAME)
+            cur = conn.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='characters'")
+            if cur.fetchone():
+                print("✅ Таблицы существуют, пропускаем инициализацию")
+                conn.close()
+                # ✅ ВАЖНО: НЕ ВЫЗЫВАЕМ seed_функции, если БД уже есть
+                return True
+            conn.close()
+        except:
+            pass
     
+    print("📦 Создаём новую базу данных...")
+    init_db()
+    
+    # ✅ ТОЛЬКО ПРИ ПЕРВОМ СОЗДАНИИ БД заполняем данными
     seed_cities()
     seed_item_templates()
     seed_consumables()
