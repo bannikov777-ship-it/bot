@@ -1,5 +1,4 @@
-#!/bin/bash
 cd /app/bot
+git add update.sh
+git commit -m "fix: обновлён update.sh (убраны CRLF)"
 git pull origin main
-echo "✅ Код обновлён!"
-echo "➡️ Перезапусти бота в панели."
