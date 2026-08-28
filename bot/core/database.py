@@ -1,53 +1,33 @@
-# core/database.py (полный исправленный)
+# core/database.py (ПОЛНЫЙ ИСПРАВЛЕННЫЙ)
+
 import os
 import sqlite3
 import json
 from config import DB_NAME
 
-def init_db():
-    """Инициализация базы данных (ТОЛЬКО если её нет)"""
-    
-    # ✅ ПРОВЕРЯЕМ: существует ли БД
-    if os.path.exists(DB_NAME):
-        print(f"📁 База данных уже существует: {DB_NAME}")
-        
-        # Проверяем, что таблицы созданы
-        try:
-            conn = sqlite3.connect(DB_NAME)
-            cur = conn.cursor()
-            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='characters'")
-            if cur.fetchone():
-                print("✅ Таблицы уже существуют, пропускаем инициализацию")
-                conn.close()
-                return
-            conn.close()
-        except:
-            pass
 
-        try:
-            cur.execute('ALTER TABLE users ADD COLUMN last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP')
-            print("✅ Добавлена колонка last_activity в users")
-        except sqlite3.OperationalError:
-            pass
-        
-        print("⚠️ База данных есть, но таблицы отсутствуют. Создаём...")
+def init_db():
+    """Инициализация базы данных (создаёт таблицы если их нет)"""
     
-    # Если БД нет или таблиц нет - создаём
     conn = sqlite3.connect(DB_NAME, timeout=10.0)
     cur = conn.cursor()
     cur.execute('PRAGMA journal_mode=WAL')
     cur.execute('PRAGMA busy_timeout=5000')
     cur.execute('PRAGMA synchronous=NORMAL')
-    # users
+    
+    # ============================================================
+    # 1. ПОЛЬЗОВАТЕЛИ И ПЕРСОНАЖИ
+    # ============================================================
+    
     cur.execute('''
         CREATE TABLE IF NOT EXISTS users (
             vk_id INTEGER PRIMARY KEY,
             state TEXT DEFAULT 'city',
-            context TEXT DEFAULT '{}'
+            context TEXT DEFAULT '{}',
+            last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     
-    # characters
     cur.execute('''
         CREATE TABLE IF NOT EXISTS characters (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,11 +57,15 @@ def init_db():
             guild_exp_contributed INTEGER DEFAULT 0,
             guild_quests_completed INTEGER DEFAULT 0,
             vip INTEGER DEFAULT 0,
-            vip_expires_at TIMESTAMP DEFAULT NULL
+            vip_expires_at TIMESTAMP DEFAULT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     
-    # cities
+    # ============================================================
+    # 2. ГОРОДА
+    # ============================================================
+    
     cur.execute('''
         CREATE TABLE IF NOT EXISTS cities (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -91,7 +75,10 @@ def init_db():
         )
     ''')
     
-    # consumable_templates
+    # ============================================================
+    # 3. РАСХОДНИКИ
+    # ============================================================
+    
     cur.execute('''
         CREATE TABLE IF NOT EXISTS consumable_templates (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -103,34 +90,21 @@ def init_db():
             price INTEGER
         )
     ''')
-
-    # permanent_promo_codes (постоянные промокоды)
+    
     cur.execute('''
-        CREATE TABLE IF NOT EXISTS permanent_promo_codes (
+        CREATE TABLE IF NOT EXISTS player_consumables (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            code TEXT UNIQUE NOT NULL,
-            reward_type TEXT NOT NULL,
-            reward_amount INTEGER NOT NULL,
-            description TEXT,
-            is_active INTEGER DEFAULT 1,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            owner_id INTEGER,
+            consumable_template_id INTEGER,
+            quantity INTEGER DEFAULT 0,
+            UNIQUE(owner_id, consumable_template_id)
         )
     ''')
     
-    # permanent_promo_uses (использования постоянных промокодов)
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS permanent_promo_uses (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            code_id INTEGER,
-            character_id INTEGER,
-            used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (code_id) REFERENCES permanent_promo_codes(id),
-            FOREIGN KEY (character_id) REFERENCES characters(id),
-            UNIQUE(code_id, character_id)
-        )
-    ''')
-
-     # ----- ПРОМОКОДЫ (одноразовые) -----
+    # ============================================================
+    # 4. ПРОМОКОДЫ (одноразовые)
+    # ============================================================
+    
     cur.execute('''
         CREATE TABLE IF NOT EXISTS promo_codes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -160,7 +134,10 @@ def init_db():
         )
     ''')
     
-    # ----- ПОСТОЯННЫЕ ПРОМОКОДЫ (многоразовые, 1 раз на аккаунт) -----
+    # ============================================================
+    # 5. ПОСТОЯННЫЕ ПРОМОКОДЫ (многоразовые, 1 раз на аккаунт)
+    # ============================================================
+    
     cur.execute('''
         CREATE TABLE IF NOT EXISTS permanent_promo_codes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -185,18 +162,10 @@ def init_db():
         )
     ''')
     
-    # player_consumables
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS player_consumables (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            owner_id INTEGER,
-            consumable_template_id INTEGER,
-            quantity INTEGER DEFAULT 0,
-            UNIQUE(owner_id, consumable_template_id)
-        )
-    ''')
+    # ============================================================
+    # 6. ГИЛЬДИИ
+    # ============================================================
     
-    # guilds
     cur.execute('''
         CREATE TABLE IF NOT EXISTS guilds (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -210,7 +179,6 @@ def init_db():
         )
     ''')
     
-    # guild_members
     cur.execute('''
         CREATE TABLE IF NOT EXISTS guild_members (
             guild_id INTEGER,
@@ -221,7 +189,6 @@ def init_db():
         )
     ''')
     
-    # guild_storage
     cur.execute('''
         CREATE TABLE IF NOT EXISTS guild_storage (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -236,7 +203,6 @@ def init_db():
         )
     ''')
     
-    # guild_applications
     cur.execute('''
         CREATE TABLE IF NOT EXISTS guild_applications (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -252,7 +218,10 @@ def init_db():
         )
     ''')
     
-    # auction_lots
+    # ============================================================
+    # 7. АУКЦИОН
+    # ============================================================
+    
     cur.execute('''
         CREATE TABLE IF NOT EXISTS auction_lots (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -272,7 +241,10 @@ def init_db():
         )
     ''')
     
-    # hunter_quest_templates
+    # ============================================================
+    # 8. КВЕСТЫ ОХОТНИКОВ
+    # ============================================================
+    
     cur.execute('''
         CREATE TABLE IF NOT EXISTS hunter_quest_templates (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -286,7 +258,6 @@ def init_db():
         )
     ''')
     
-    # player_quests
     cur.execute('''
         CREATE TABLE IF NOT EXISTS player_quests (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -298,7 +269,6 @@ def init_db():
         )
     ''')
     
-    # daily_quest_stats
     cur.execute('''
         CREATE TABLE IF NOT EXISTS daily_quest_stats (
             player_id INTEGER PRIMARY KEY,
@@ -307,7 +277,10 @@ def init_db():
         )
     ''')
     
-    # tower_party
+    # ============================================================
+    # 9. БАШНЯ
+    # ============================================================
+    
     cur.execute('''
         CREATE TABLE IF NOT EXISTS tower_party (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -320,7 +293,6 @@ def init_db():
         )
     ''')
     
-    # tower_bosses
     cur.execute('''
         CREATE TABLE IF NOT EXISTS tower_bosses (
             floor INTEGER PRIMARY KEY,
@@ -333,7 +305,6 @@ def init_db():
         )
     ''')
     
-    # tower_invites
     cur.execute('''
         CREATE TABLE IF NOT EXISTS tower_invites (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -345,7 +316,10 @@ def init_db():
         )
     ''')
     
-    # mail
+    # ============================================================
+    # 10. ПОЧТА
+    # ============================================================
+    
     cur.execute('''
         CREATE TABLE IF NOT EXISTS mail (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -362,7 +336,10 @@ def init_db():
         )
     ''')
     
-    # resource_templates
+    # ============================================================
+    # 11. РЕСУРСЫ (ТРОФЕИ)
+    # ============================================================
+    
     cur.execute('''
         CREATE TABLE IF NOT EXISTS resource_templates (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -375,7 +352,6 @@ def init_db():
         )
     ''')
     
-    # player_resources
     cur.execute('''
         CREATE TABLE IF NOT EXISTS player_resources (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -386,7 +362,10 @@ def init_db():
         )
     ''')
     
-    # craft_recipes
+    # ============================================================
+    # 12. КРАФТ
+    # ============================================================
+    
     cur.execute('''
         CREATE TABLE IF NOT EXISTS craft_recipes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -405,7 +384,10 @@ def init_db():
         )
     ''')
     
-    # herbs
+    # ============================================================
+    # 13. ТРАВЫ
+    # ============================================================
+    
     cur.execute('''
         CREATE TABLE IF NOT EXISTS herbs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -416,7 +398,6 @@ def init_db():
         )
     ''')
     
-    # player_herbs
     cur.execute('''
         CREATE TABLE IF NOT EXISTS player_herbs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -427,7 +408,10 @@ def init_db():
         )
     ''')
     
-    # guild_quests
+    # ============================================================
+    # 14. ГИЛЬДЕЙСКИЕ КВЕСТЫ
+    # ============================================================
+    
     cur.execute('''
         CREATE TABLE IF NOT EXISTS guild_quests (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -443,7 +427,6 @@ def init_db():
         )
     ''')
     
-    # player_guild_quests
     cur.execute('''
         CREATE TABLE IF NOT EXISTS player_guild_quests (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -458,7 +441,6 @@ def init_db():
         )
     ''')
     
-    # guild_quests_daily
     cur.execute('''
         CREATE TABLE IF NOT EXISTS guild_quests_daily (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -469,7 +451,10 @@ def init_db():
         )
     ''')
     
-    # item_templates
+    # ============================================================
+    # 15. ПРЕДМЕТЫ
+    # ============================================================
+    
     cur.execute('''
         CREATE TABLE IF NOT EXISTS item_templates (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -489,7 +474,6 @@ def init_db():
         )
     ''')
     
-    # player_items
     cur.execute('''
         CREATE TABLE IF NOT EXISTS player_items (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -504,7 +488,10 @@ def init_db():
         )
     ''')
     
-    # premium_shop
+    # ============================================================
+    # 16. ПРЕМИУМ МАГАЗИН
+    # ============================================================
+    
     cur.execute('''
         CREATE TABLE IF NOT EXISTS premium_shop (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -517,7 +504,10 @@ def init_db():
         )
     ''')
     
-    # ✅ Исправлено: equipment создаётся только если не существует
+    # ============================================================
+    # 17. ЭКИПИРОВКА
+    # ============================================================
+    
     cur.execute('''
         CREATE TABLE IF NOT EXISTS equipment (
             character_id INTEGER,
@@ -531,11 +521,14 @@ def init_db():
     
     conn.commit()
     conn.close()
-    print("✅ База данных инициализирована")
+    print("✅ База данных проверена/обновлена")
 
+
+# ============================================================
+# SEED ФУНКЦИИ (заполнение начальными данными)
+# ============================================================
 
 def seed_cities():
-    """Заполнение городов"""
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     cur.execute('SELECT COUNT(*) FROM cities')
@@ -550,7 +543,6 @@ def seed_cities():
 
 
 def seed_consumables():
-    """Заполнение расходников"""
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     cur.execute('SELECT COUNT(*) FROM consumable_templates')
@@ -579,7 +571,6 @@ def seed_consumables():
 
 
 def seed_herbs():
-    """Заполнение трав"""
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     cur.execute('SELECT COUNT(*) FROM herbs')
@@ -600,7 +591,6 @@ def seed_herbs():
 
 
 def seed_guild_quests():
-    """Заполнение гильдейских квестов"""
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     cur.execute('SELECT COUNT(*) FROM guild_quests')
@@ -627,7 +617,6 @@ def seed_guild_quests():
 
 
 def seed_premium_shop():
-    """Заполнение премиум-магазина"""
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     cur.execute('SELECT COUNT(*) FROM premium_shop')
@@ -646,24 +635,4 @@ def seed_premium_shop():
             VALUES (?, ?, ?, ?, ?, ?)
         ''', items)
         conn.commit()
-    conn.close()
-
-
-def add_vip_columns():
-    """Добавляет колонки VIP в таблицу characters если их нет"""
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
-    
-    cur.execute("PRAGMA table_info(characters)")
-    columns = [col[1] for col in cur.fetchall()]
-    
-    if 'vip' not in columns:
-        cur.execute('ALTER TABLE characters ADD COLUMN vip INTEGER DEFAULT 0')
-        print("✅ Добавлена колонка vip")
-    
-    if 'vip_expires_at' not in columns:
-        cur.execute('ALTER TABLE characters ADD COLUMN vip_expires_at TIMESTAMP DEFAULT NULL')
-        print("✅ Добавлена колонка vip_expires_at")
-    
-    conn.commit()
     conn.close()
