@@ -49,6 +49,8 @@ from keyboards import (get_gender_keyboard, get_back_keyboard, get_lore_keyboard
 # main.py - добавь эти импорты в начало файла (если их нет)
 from guild_quests import check_pending_guild_quests_on_startup, periodic_quest_check
 from admin import admin_codes_menu, admin_create_code, admin_show_codes, is_admin
+from permanent_promo import init_default_promo
+from core.user import update_activity
 
 
 logging.basicConfig(level=logging.INFO)
@@ -143,6 +145,12 @@ async def message_handler(message: Message):
     text = message.text or ""
     payload = message.payload
 
+    # ✅ Обновляем время последней активности при любом сообщении
+    try:
+        await asyncio.to_thread(update_activity, user_id)
+    except Exception as e:
+        print(f"⚠️ Ошибка обновления активности: {e}")
+
     # ===== КОМАНДА АВАРИЙНОГО ВЫХОДА (работает в ЛЮБОМ состоянии) =====
     if text and text.lower() == '!reset':
         print(f"🔄 Аварийный сброс: пользователь {user_id} использовал !reset")
@@ -175,6 +183,18 @@ async def message_handler(message: Message):
             traceback.print_exc()
             await show_city(bot.api, user_id)
         
+        return
+
+        # ---- КОМАНДА ПРОФИЛЬ ----
+    if text and text.lower() in ['профиль', 'мой профиль']:
+        user_data = await get_user_async(user_id)
+        current_state = user_data['state']
+        # ✅ Разрешаем из города И из инвентаря
+        if current_state not in ['city', 'city2', 'inventory']:
+            await send_message(bot.api, user_id, '❌ Профиль доступен только в городе или из инвентаря!')
+            await show_city(bot.api, user_id)
+            return
+        await show_profile(bot.api, user_id)
         return
 
     # ---- ОБРАБОТКА PAYLOAD (КНОПКИ) ----
@@ -229,6 +249,7 @@ async def message_handler(message: Message):
                 'awaiting_guild_accept',
                 'awaiting_guild_reject',
                 'scrolls',
+                'awaiting_permanent_promo',
             ]
             
             # Если состояние НЕ в списке ожидаемых - игнорируем
@@ -603,6 +624,25 @@ async def message_handler(message: Message):
                     await show_inventory_equip_by_id(bot.api, user_id, item_id)
                 except ValueError:
                     await send_message(bot.api, user_id, '❌ Введите число (ID предмета).', get_back_keyboard('инвентарь'))
+                return
+
+            if state == 'awaiting_permanent_promo':
+                char = await get_character_async(user_id)
+                if not char:
+                    await send_message(bot.api, user_id, '❌ Сначала создайте персонажа.')
+                    return
+                
+                code = text.strip().upper()
+                
+                from permanent_promo import use_permanent_promo
+                success, msg, reward_type, amount = use_permanent_promo(char['id'], code)
+                
+                if success:
+                    await send_message(bot.api, user_id, msg)
+                else:
+                    await send_message(bot.api, user_id, '❌ Неверный промокод или вы уже его использовали.')
+                
+                await update_user_async(user_id, state='profile', context={})
                 return
 
             # ---- ИНВЕНТАРЬ - СНЯТИЕ ----

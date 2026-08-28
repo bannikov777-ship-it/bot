@@ -608,23 +608,26 @@ async def end_battle(vk, user_id, won, fled=False):
 
             guild = await asyncio.to_thread(get_guild_by_character, char['id'])
             if guild:
-                guild_exp = max(1, exp_gain // 5)
-                cur.execute('UPDATE characters SET guild_exp_contributed = guild_exp_contributed + ? WHERE id = ?', (guild_exp, char['id']))
-                cur.execute('SELECT level, exp FROM guilds WHERE id = ?', (guild['id'],))
-                g_row = cur.fetchone()
-                if g_row:
-                    g_level, g_exp = g_row
-                    g_exp += guild_exp
-                    while True:
-                        needed = guild_exp_to_next_level(g_level)
-                        if g_exp >= needed:
-                            g_exp -= needed
-                            g_level += 1
-                            cur.execute('UPDATE guilds SET max_members = max_members + 3 WHERE id = ?', (guild['id'],))
-                        else:
-                            break
-                    cur.execute('UPDATE guilds SET level = ?, exp = ? WHERE id = ?', (g_level, g_exp, guild['id']))
-
+                guild_exp = max(1, exp_gain // 10)
+            
+                guild = await asyncio.to_thread(get_guild_by_character, char['id'])
+                if guild:
+                    cur.execute('UPDATE characters SET guild_exp_contributed = guild_exp_contributed + ? WHERE id = ?', 
+                                (guild_exp, char['id']))
+                    cur.execute('SELECT level, exp FROM guilds WHERE id = ?', (guild['id'],))
+                    g_row = cur.fetchone()
+                    if g_row:
+                        g_level, g_exp = g_row
+                        g_exp += guild_exp
+                        while True:
+                            needed = guild_exp_to_next_level(g_level)
+                            if g_exp >= needed:
+                                g_exp -= needed
+                                g_level += 1
+                                cur.execute('UPDATE guilds SET max_members = max_members + 3 WHERE id = ?', (guild['id'],))
+                            else:
+                                break
+                        cur.execute('UPDATE guilds SET level = ?, exp = ? WHERE id = ?', (g_level, g_exp, guild['id']))
             conn.commit()
             conn.close()
 

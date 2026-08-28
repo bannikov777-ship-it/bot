@@ -9,7 +9,7 @@ from guild import (
     add_to_guild_storage, remove_from_guild_storage, send_guild_message,
     get_guild, get_guild_rank, get_guilds_list, get_guild_applications,
     apply_to_guild, accept_application, reject_application,
-    get_guild_applications_count
+    get_guild_applications_count, get_guild_members_with_activity
 )
 from keyboards import (
     get_guild_keyboard, get_guild_chat_keyboard, 
@@ -33,28 +33,36 @@ async def show_guild(vk, user_id):
     if not char:
         await send_message(vk, user_id, 'Сначала создайте персонажа.', get_back_keyboard('город'))
         return
+    
     guild = await asyncio.to_thread(get_guild_by_character, char['id'])
     if not guild:
         keyboard = get_guild_menu_keyboard()
         await send_message(vk, user_id, '🏰 Вы не состоите в гильдии. Что желаете сделать?', keyboard, attachment=GUILD_IMAGE)
         return
+    
     leader = await get_character_by_id_async(guild['leader_id'])
     leader_name = leader['name'] if leader else 'Неизвестно'
+    
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     cur.execute('SELECT rank FROM guild_members WHERE guild_id = ? AND character_id = ?', (guild['id'], char['id']))
     row = cur.fetchone()
     conn.close()
     my_rank = row[0] if row else 'Участник'
+    
     exp_current = guild['exp']
     exp_needed = guild_exp_to_next_level(guild['level'])
     progress = min(1.0, exp_current / exp_needed) if exp_needed > 0 else 0
     bar_length = 10
     filled = int(progress * bar_length)
     bar = "█" * filled + "░" * (bar_length - filled)
+    
     text = f"🏰 {guild['name']}\nУровень: {guild['level']} | Опыт: {exp_current} / {exp_needed} [{bar}]\n💰{guild['silver']}\nЛидер: {leader_name}\nУчастников: {len(get_guild_members(guild['id']))}/{guild['max_members']}"
-    keyboard = get_guild_keyboard(guild, my_rank)
+    
+    keyboard = get_guild_keyboard(guild, my_rank)  # ❌ Убрали статистику
+    
     await send_message(vk, user_id, text, keyboard, attachment=GUILD_IMAGE)
+    
     user_data = await get_user_async(user_id)
     context = user_data['context']
     context['parent_state'] = 'city'
@@ -158,20 +166,54 @@ async def show_guild_withdraw_confirm(vk, user_id, amount):
 
 
 async def show_guild_members(vk, user_id):
-    """Список участников гильдии"""
+    """Список участников гильдии с активностью"""
     char = await get_character_async(user_id)
     if not char:
         await send_message(vk, user_id, 'Сначала создайте персонажа.', get_back_keyboard('город'))
         return
+    
     guild = await asyncio.to_thread(get_guild_by_character, char['id'])
     if not guild:
         await send_message(vk, user_id, 'Вы не состоите в гильдии.', get_back_keyboard('гильдию'))
         return
-    members = get_guild_members(guild['id'])
-    lines = [f"👥 Участники гильдии «{guild['name']}»:"]
-    for m in members:
-        lines.append(f"• {m['name']} (ID: {m['id']}, {m['rank']})")
-    await send_message(vk, user_id, "\n".join(lines), get_back_keyboard('гильдию'), attachment=GUILD_MEMBERS_IMAGE)
+    
+    members = await asyncio.to_thread(get_guild_members_with_activity, guild['id'])
+    
+    if not members:
+        await send_message(vk, user_id, 'В гильдии пока нет участников.', get_back_keyboard('гильдию'))
+        return
+    
+    # Получаем опыт гильдии (только за убийства и башню)
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute('SELECT exp FROM guilds WHERE id = ?', (guild['id'],))
+    guild_exp_row = cur.fetchone()
+    conn.close()
+    guild_exp = guild_exp_row[0] if guild_exp_row else 0
+    
+    lines = [f"👥 Участники гильдии «{guild['name']}»:\n"]
+    lines.append(f"📊 Опыт гильдии: {guild_exp} / {guild_exp_to_next_level(guild['level'])}\n")
+    
+    for i, m in enumerate(members, 1):
+        rank_icons = {
+            'Лидер': '👑',
+            'Заместитель': '⭐',
+            'Офицер': '🔰',
+            'Участник': '👤'
+        }
+        rank_icon = rank_icons.get(m['rank'], '👤')
+        
+        line = f"{i}. (ID: {m['id']}) | {rank_icon} {m['name']} | {m['level']}ур. | Активность: {m['guild_exp']} | {m['last_activity']}"
+        lines.append(line)
+    
+    text = "\n".join(lines)
+    
+    keyboard = VkKeyboard()
+    keyboard.add_button('🔄 Обновить', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'guild_members'})
+    keyboard.add_button('🏰 В гильдию', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_guild'})
+    
+    await send_message(vk, user_id, text, keyboard, attachment=GUILD_MEMBERS_IMAGE)
+    
     user_data = await get_user_async(user_id)
     context = user_data['context']
     context['parent_state'] = 'guild'

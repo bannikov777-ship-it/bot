@@ -1,4 +1,5 @@
-# admin.py (полный исправленный)
+# admin.py (исправленный)
+
 import sqlite3
 from codes import create_code, get_codes_list, get_codes_stats
 from core import send_message, get_character_async
@@ -6,7 +7,7 @@ from vk_api.keyboard import VkKeyboard, VkKeyboardColor
 from config import DB_NAME
 
 # Список администраторов (ID VK)
-ADMIN_IDS = [31979968]  # Добавьте свои ID
+ADMIN_IDS = [31979968]
 
 
 async def is_admin(user_id):
@@ -15,18 +16,7 @@ async def is_admin(user_id):
 
 
 async def admin_create_code(vk, user_id, amount=100, days=30, max_uses=1, description="", reward_type="crystals"):
-    """
-    Создание промокода администратором
-    
-    Args:
-        vk: объект VK API
-        user_id: ID администратора
-        amount: количество кристаллов или серебра
-        days: срок действия в днях
-        max_uses: максимальное количество использований
-        description: описание кода
-        reward_type: тип награды ("crystals" или "silver")
-    """
+    """Создание промокода администратором"""
     if not await is_admin(user_id):
         await send_message(vk, user_id, '❌ Доступ запрещён. Только для администраторов.')
         return
@@ -38,18 +28,16 @@ async def admin_create_code(vk, user_id, amount=100, days=30, max_uses=1, descri
         description=description or f"{amount} {'💎 кристаллов' if reward_type == 'crystals' else '💰 серебра'}"
     )
     
-    # Сохраняем тип награды в отдельную таблицу или в description
+    # Сохраняем тип награды
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     
-    # Добавляем колонку reward_type если её нет
     cur.execute("PRAGMA table_info(promo_codes)")
     columns = [col[1] for col in cur.fetchall()]
     if 'reward_type' not in columns:
         cur.execute('ALTER TABLE promo_codes ADD COLUMN reward_type TEXT DEFAULT "crystals"')
         conn.commit()
     
-    # Обновляем запись с типом награды
     cur.execute('UPDATE promo_codes SET reward_type = ? WHERE code = ?', (reward_type, code))
     conn.commit()
     conn.close()
@@ -118,21 +106,16 @@ async def admin_codes_menu(vk, user_id):
         return
     
     keyboard = VkKeyboard()
+    
     keyboard.add_button('💎 Код на 100 кристаллов', color=VkKeyboardColor.PRIMARY, 
                        payload={'cmd': 'admin_code_create', 'amount': 100, 'type': 'crystals'})
     keyboard.add_button('💎 Код на 500 кристаллов', color=VkKeyboardColor.PRIMARY, 
                        payload={'cmd': 'admin_code_create', 'amount': 500, 'type': 'crystals'})
     keyboard.add_line()
-    keyboard.add_button('💎 Код на 1000 кристаллов', color=VkKeyboardColor.PRIMARY, 
-                       payload={'cmd': 'admin_code_create', 'amount': 1000, 'type': 'crystals'})
-    keyboard.add_line()
     keyboard.add_button('💰 Код на 10000 серебра', color=VkKeyboardColor.PRIMARY, 
                        payload={'cmd': 'admin_code_create', 'amount': 10000, 'type': 'silver'})
     keyboard.add_button('💰 Код на 50000 серебра', color=VkKeyboardColor.PRIMARY, 
                        payload={'cmd': 'admin_code_create', 'amount': 50000, 'type': 'silver'})
-    keyboard.add_line()
-    keyboard.add_button('💰 Код на 100000 серебра', color=VkKeyboardColor.PRIMARY, 
-                       payload={'cmd': 'admin_code_create', 'amount': 100000, 'type': 'silver'})
     keyboard.add_line()
     keyboard.add_button('📋 Список кодов', color=VkKeyboardColor.SECONDARY, 
                        payload={'cmd': 'admin_codes_list'})
@@ -141,4 +124,8 @@ async def admin_codes_menu(vk, user_id):
     
     await send_message(vk, user_id, 
         '🛠️ Управление промокодами\n\n'
-        'Выберите тип и сумму награды:', keyboard)
+        '📌 Одноразовые коды — можно использовать 1 раз\n'
+        '📌 Постоянный код OpenGame — 100 💎 + 2000 💰 (1 раз на аккаунт)\n\n'
+        '🎁 Код для новичков:\n'
+        '• OpenGame → 100 💎 кристаллов + 2000 💰 серебра',
+        keyboard)

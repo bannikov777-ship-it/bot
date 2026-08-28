@@ -23,6 +23,12 @@ def init_db():
             conn.close()
         except:
             pass
+
+        try:
+            cur.execute('ALTER TABLE users ADD COLUMN last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP')
+            print("✅ Добавлена колонка last_activity в users")
+        except sqlite3.OperationalError:
+            pass
         
         print("⚠️ База данных есть, но таблицы отсутствуют. Создаём...")
     
@@ -95,6 +101,87 @@ def init_db():
             restore_type TEXT,
             restore_percent INTEGER,
             price INTEGER
+        )
+    ''')
+
+    # permanent_promo_codes (постоянные промокоды)
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS permanent_promo_codes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT UNIQUE NOT NULL,
+            reward_type TEXT NOT NULL,
+            reward_amount INTEGER NOT NULL,
+            description TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # permanent_promo_uses (использования постоянных промокодов)
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS permanent_promo_uses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code_id INTEGER,
+            character_id INTEGER,
+            used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (code_id) REFERENCES permanent_promo_codes(id),
+            FOREIGN KEY (character_id) REFERENCES characters(id),
+            UNIQUE(code_id, character_id)
+        )
+    ''')
+
+     # ----- ПРОМОКОДЫ (одноразовые) -----
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS promo_codes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT UNIQUE NOT NULL,
+            amount INTEGER NOT NULL,
+            max_uses INTEGER DEFAULT 1,
+            used_count INTEGER DEFAULT 0,
+            expires_at TIMESTAMP,
+            description TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_by INTEGER,
+            is_active INTEGER DEFAULT 1,
+            reward_type TEXT DEFAULT 'crystals'
+        )
+    ''')
+    
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS promo_code_uses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code_id INTEGER,
+            character_id INTEGER,
+            used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            amount INTEGER,
+            FOREIGN KEY (code_id) REFERENCES promo_codes(id),
+            FOREIGN KEY (character_id) REFERENCES characters(id),
+            UNIQUE(code_id, character_id)
+        )
+    ''')
+    
+    # ----- ПОСТОЯННЫЕ ПРОМОКОДЫ (многоразовые, 1 раз на аккаунт) -----
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS permanent_promo_codes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT UNIQUE NOT NULL,
+            reward_type TEXT NOT NULL,
+            reward_amount INTEGER NOT NULL,
+            description TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS permanent_promo_uses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code_id INTEGER,
+            character_id INTEGER,
+            used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (code_id) REFERENCES permanent_promo_codes(id),
+            FOREIGN KEY (character_id) REFERENCES characters(id),
+            UNIQUE(code_id, character_id)
         )
     ''')
     

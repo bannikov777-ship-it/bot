@@ -1,4 +1,4 @@
-# locations/callback_handler.py - ПОЛНОСТЬЮ ИСПРАВЛЕННЫЙ С РАЗДЕЛЬНОЙ БЛОКИРОВКОЙ
+# locations/callback_handler.py
 
 import sqlite3
 import asyncio
@@ -31,20 +31,19 @@ from locations.premium import show_premium_shop, show_premium_buy_prompt, show_p
 from locations.codes import show_codes_menu, process_code_enter
 from handlers.guild_quests import handle_guild_quests
 
-# Импортируем функции из locations
 from . import (
-    show_city, show_city2, show_guild, show_market, show_healer, 
-    show_auction, show_smithy, show_church, show_market_shop, 
-    show_hunters, show_tavern, show_town_hall, show_profile, 
-    show_inventory, show_exit, show_forest, show_graveyard, 
+    show_city, show_city2, show_guild, show_market, show_healer,
+    show_auction, show_smithy, show_church, show_market_shop,
+    show_hunters, show_tavern, show_town_hall, show_profile,
+    show_inventory, show_exit, show_forest, show_graveyard,
     show_meadow, show_rating, show_guild_donate, show_guild_withdraw,
-    show_guild_donate_confirm, show_guild_withdraw_confirm, 
+    show_guild_donate_confirm, show_guild_withdraw_confirm,
     show_guild_members, show_guild_storage, show_guild_stats,
     show_guild_manage, show_guild_manage_by_id, show_guild_manage_member_by_id,
     show_guild_chat,
     show_hunters_quests, show_hunters_my_quests, show_hunters_take_quest,
-    show_hunters_sell, show_healer_buy, show_healer_craft, 
-    show_healer_sell_herbs, show_smithy_upgrade_menu, 
+    show_hunters_sell, show_healer_buy, show_healer_craft,
+    show_healer_sell_herbs, show_smithy_upgrade_menu,
     show_tavern_food, show_tavern_room, show_church_remove_debuff,
     show_inventory_equip, show_inventory_unequip, show_inventory_equip_select,
     forest_deep, forest_wander,
@@ -52,40 +51,38 @@ from . import (
     show_tower
 )
 
-# Импортируем функции из market отдельно
 from locations.market import show_market_category, show_market_buy_item
 from locations.tower import show_tower_chat
 from locations.graveyard import back_to_exit as graveyard_back_to_exit
 
-# ===== РАЗДЕЛЬНАЯ БЛОКИРОВКА ДЛЯ РАЗНЫХ ТИПОВ ДЕЙСТВИЙ =====
-battle_lock = {}      # Для боя (1.5 сек)
-nav_lock = {}         # Для навигации (0.3 сек)
-action_lock = {}      # Для остальных действий (0.5 сек)
+battle_lock = {}
+nav_lock = {}
+action_lock = {}
+fight_start_lock = {}
+
 
 async def show_tower_chat(vk, user_id):
-    """Показ чата группы башни"""
     char = await get_character_async(user_id)
     if not char:
         await send_message(vk, user_id, 'Сначала создайте персонажа.', get_back_keyboard('город'))
         return
-    
+
     party = await asyncio.to_thread(get_tower_party, char['id'])
     if not party:
         await send_message(vk, user_id, 'Вы не в группе башни.', get_back_keyboard('башня'))
         await show_tower(vk, user_id)
         return
-    
+
     from keyboards import get_tower_chat_keyboard
     keyboard = get_tower_chat_keyboard()
-    
     await send_message(vk, user_id, '💬 Чат группы башни\n\nНапишите сообщение, и оно будет отправлено всем участникам группы.', keyboard)
     user_data = await get_user_async(user_id)
     context = user_data['context']
     context['parent_state'] = 'tower'
     await update_user_async(user_id, state='tower_chat', context=context)
 
+
 async def show_sleep_status(vk, user_id):
-    """Показ статуса сна"""
     user_data = await get_user_async(user_id)
     context = user_data['context']
     sleep_end_time = context.get('sleep_end_time')
@@ -100,25 +97,16 @@ async def show_sleep_status(vk, user_id):
     await send_message(vk, user_id, f'⏳ До пробуждения осталось: {hours}ч {minutes}м {seconds}с', get_sleep_status_keyboard())
 
 
-# ===== РАЗДЕЛЬНАЯ БЛОКИРОВКА ДЛЯ РАЗНЫХ ТИПОВ ДЕЙСТВИЙ =====
-battle_lock = {}          # Для боя (0.8 сек)
-nav_lock = {}             # Для навигации (0.3 сек)
-action_lock = {}          # Для остальных действий (0.5 сек)
-fight_start_lock = {}     # Для команд, запускающих бой (5 сек)
-
 async def handle_callback(vk, user_id, payload):
-    """Обработчик callback-кнопок с раздельной блокировкой"""
     print(f"📩 handle_callback: payload={payload}")
-    
+
     cmd = payload.get('cmd')
     current_time = time.time()
-    
-    # ---- БЛОКИРОВКА ДЛЯ КОМАНД, ЗАПУСКАЮЩИХ БОЙ (5 сек) ----
-    # ✅ Добавлены все команды, которые запускают бой
+
     fight_commands = [
-        'forest', 'forest_wander', 'forest_deep',      # Лес (вход, бродяжничество, углубление)
-        'graveyard', 'graveyard_wander', 'graveyard_deep', # Кладбище (вход, бродяжничество, углубление)
-        'meadow_herbs'                       # Сбор трав
+        'forest', 'forest_wander', 'forest_deep',
+        'graveyard', 'graveyard_wander', 'graveyard_deep',
+        'meadow_herbs'
     ]
     if cmd in fight_commands:
         if user_id in fight_start_lock:
@@ -128,8 +116,7 @@ async def handle_callback(vk, user_id, payload):
                 await send_message(vk, user_id, "⏳ Вы уже ищете приключения! Подождите немного...")
                 return
         fight_start_lock[user_id] = current_time
-    
-    # ---- БОЙ (0.8 сек) ----
+
     if cmd and cmd.startswith('battle_'):
         if user_id in battle_lock:
             elapsed = current_time - battle_lock[user_id]
@@ -137,8 +124,7 @@ async def handle_callback(vk, user_id, payload):
                 print(f"⏳ Бой: слишком быстро ({elapsed:.2f} сек)")
                 return
         battle_lock[user_id] = current_time
-    
-    # ---- НАВИГАЦИЯ (0.3 сек) ----
+
     elif cmd and cmd.startswith('go_'):
         if user_id in nav_lock:
             elapsed = current_time - nav_lock[user_id]
@@ -146,8 +132,7 @@ async def handle_callback(vk, user_id, payload):
                 print(f"⏳ Навигация: слишком быстро ({elapsed:.2f} сек)")
                 return
         nav_lock[user_id] = current_time
-    
-    # ---- ОСТАЛЬНОЕ (0.5 сек) ----
+
     else:
         if user_id in action_lock:
             elapsed = current_time - action_lock[user_id]
@@ -196,26 +181,22 @@ async def handle_callback(vk, user_id, payload):
         await show_city(vk, user_id)
         return
 
-    # ---- БАШНЯ ----
     if await handle_tower_commands(vk, user_id, cmd, payload):
         return
 
-    # ---- ГИЛЬДЕЙСКИЕ КВЕСТЫ ----
     if await handle_guild_quests(vk, user_id, cmd, payload):
         return
 
-    # ---- БОЙ ----
     if cmd.startswith('battle_'):
         action = cmd[7:]
         await process_battle_action(vk, user_id, action, payload)
         return
 
-    # ---- НАВИГАЦИЯ (явные переходы) ----
     if cmd == 'go_city':
         from .base import navigate_to
         await navigate_to(vk, user_id, 'city')
         return
-    
+
     if cmd == 'go_meadow':
         from .base import navigate_to
         await navigate_to(vk, user_id, 'meadow')
@@ -246,6 +227,27 @@ async def handle_callback(vk, user_id, payload):
         return
 
     if cmd == 'go_profile':
+        user_data = await get_user_async(user_id)
+        current_state = user_data['state']
+        # ✅ Разрешаем из города И из инвентаря
+        if current_state not in ['city', 'city2', 'inventory']:
+            await send_message(vk, user_id, '❌ Профиль доступен только в городе или из инвентаря!')
+            await show_city(vk, user_id)
+            return
+        context = user_data['context']
+        context['parent_state'] = 'city'
+        await update_user_async(user_id, context=context)
+        await show_profile(vk, user_id)
+        return
+
+    if cmd == 'profile':
+        user_data = await get_user_async(user_id)
+        current_state = user_data['state']
+        # ✅ Разрешаем из города И из инвентаря
+        if current_state not in ['city', 'city2', 'inventory']:
+            await send_message(vk, user_id, '❌ Профиль доступен только в городе или из инвентаря!')
+            await show_city(vk, user_id)
+            return
         await show_profile(vk, user_id)
         return
 
@@ -289,8 +291,12 @@ async def handle_callback(vk, user_id, payload):
         return
 
     if cmd == 'code_enter':
-        await send_message(vk, user_id, '📝 Введите промокод:')
-        await update_user_async(user_id, state='awaiting_code', context={'parent_state': 'city'})
+        await send_message(vk, user_id,
+            '📝 Введите промокод:\n\n'
+            '🎁 Доступный код:\n'
+            '• OpenGame → 100 💎 кристаллов + 2000 💰 серебра\n\n'
+            'Код можно использовать только 1 раз!')
+        await update_user_async(user_id, state='awaiting_permanent_promo', context={'parent_state': 'city'})
         return
 
     if cmd == 'copy_code':
@@ -299,7 +305,7 @@ async def handle_callback(vk, user_id, payload):
             await send_message(vk, user_id, f'📋 Код скопирован:\n`{code}`')
         return
 
-    # ---- СВИТКИ ----
+    # ---- ОСТАЛЬНЫЕ КОМАНДЫ (без изменений) ----
     if cmd == 'scrolls':
         await show_scrolls(vk, user_id)
         return
@@ -313,7 +319,6 @@ async def handle_callback(vk, user_id, payload):
             await send_message(vk, user_id, '❌ Ошибка: свиток не найден.', get_back_keyboard('инвентарь'))
         return
 
-    # ---- ПРЕМИУМ МАГАЗИН ----
     if cmd == 'premium_shop':
         await show_premium_shop(vk, user_id)
         return
@@ -442,27 +447,22 @@ async def handle_callback(vk, user_id, payload):
         price = payload.get('price')
         shop_level = payload.get('shop_level', 1)
         rarity = payload.get('rarity', 1)
-    
         char = await get_character_async(user_id)
         if not char:
             await send_message(vk, user_id, 'Сначала создайте персонажа.', get_back_keyboard('город'))
             return
-    
         if char['silver'] < price:
             await send_message(vk, user_id, f'❌ Недостаточно серебра! Нужно {price}💰.', get_back_keyboard('магазин'))
             return
-    
         item_id = generate_shop_item(char['id'], template_name, shop_level)
         if not item_id:
             await send_message(vk, user_id, '❌ Ошибка при создании предмета.', get_back_keyboard('магазин'))
             return
-    
         conn = sqlite3.connect(DB_NAME)
         cur = conn.cursor()
         cur.execute('UPDATE characters SET silver = silver - ? WHERE id = ?', (price, char['id']))
         conn.commit()
         conn.close()
-    
         from core import get_item_prefix
         await send_message(vk, user_id, f'✅ Вы купили **{get_item_prefix(shop_level)} {template_name}** за {price}💰!', get_back_keyboard('магазин'))
         await show_market_shop(vk, user_id)
@@ -638,7 +638,6 @@ async def handle_callback(vk, user_id, payload):
         await show_guild_applications(vk, user_id)
         return
 
-    # ✅ ДОБАВЛЕНО: принятие заявки по ID
     if cmd == 'guild_accept_app':
         app_id = payload.get('app_id')
         if app_id:
@@ -646,7 +645,6 @@ async def handle_callback(vk, user_id, payload):
             await show_guild_accept_app(vk, user_id, app_id)
         return
 
-    # ✅ ДОБАВЛЕНО: отклонение заявки по ID
     if cmd == 'guild_reject_app':
         app_id = payload.get('app_id')
         if app_id:
@@ -771,7 +769,6 @@ async def handle_callback(vk, user_id, payload):
         await show_guild_list(vk, user_id, 1)
         return
 
-    # ---- ЗАЯВКИ В ГИЛЬДИЮ (по ID) ----
     if cmd == 'guild_accept_prompt':
         await send_message(vk, user_id, '📝 Введите ID заявки для принятия:')
         await update_user_async(user_id, state='awaiting_guild_accept', context={'parent_state': 'guild_applications'})
@@ -786,15 +783,15 @@ async def handle_callback(vk, user_id, payload):
     if cmd == 'tavern':
         await show_tavern(vk, user_id)
         return
-    
+
     if cmd == 'tavern_food':
         await show_tavern_food(vk, user_id)
         return
-    
+
     if cmd == 'tavern_room':
         await show_tavern_room(vk, user_id)
         return
-    
+
     if cmd == 'tavern_quests':
         await send_message(vk, user_id, '📜 Доступные квесты:\n1. Принести шкуры волков\n2. Найти пропавший амулет\n(пока заглушка)', get_back_keyboard('таверну'))
         user_data = await get_user_async(user_id)
@@ -802,7 +799,7 @@ async def handle_callback(vk, user_id, payload):
         context['parent_state'] = 'tavern'
         await update_user_async(user_id, state='tavern_quests', context=context)
         return
-    
+
     if cmd == 'tavern_rumors':
         await send_message(vk, user_id, '🗣 Слухи: говорят, в Пустошах видели светящийся камень. И ещё — в Стальном Троне кто-то ищет отважных искателей.', get_back_keyboard('таверну'))
         user_data = await get_user_async(user_id)
@@ -843,24 +840,19 @@ async def handle_callback(vk, user_id, payload):
         if not char:
             await send_message(vk, user_id, 'Сначала создайте персонажа.', get_back_keyboard('город'))
             return
-        
         if char['silver'] < price:
             await send_message(vk, user_id, f'❌ Недостаточно серебра! Нужно {price}💰.', get_back_keyboard('таверну'))
             return
-        
         user_data = await get_user_async(user_id)
         context = user_data['context']
         if 'sleep_task_id' in context:
             scheduler.cancel(context['sleep_task_id'])
-        
         from keyboards import get_sleep_status_keyboard
-        
         conn = sqlite3.connect(DB_NAME)
         cur = conn.cursor()
         cur.execute('UPDATE characters SET silver = silver - ? WHERE id = ?', (price, char['id']))
         conn.commit()
         conn.close()
-        
         await send_message(vk, user_id,
             f'😴 Вы легли спать на {hours} час(а). Восстановится {percent}% HP, {percent}% MP и {percent}% Stamina.\n'
             f'💰 Снято {price} серебра\n\n'
@@ -1093,13 +1085,18 @@ async def handle_callback(vk, user_id, payload):
         from locations.graveyard import graveyard_wander
         await graveyard_wander(vk, user_id)
         return
-    
+
     # ---- ОСТАЛЬНЫЕ КОМАНДЫ ----
     if cmd == 'back_to_city':
         await show_city(vk, user_id)
         return
 
     if cmd == 'profile':
+        user_data = await get_user_async(user_id)
+        if user_data['state'] not in ['city', 'city2']:
+            await send_message(vk, user_id, '❌ Профиль доступен только в городе!')
+            await show_city(vk, user_id)
+            return
         await show_profile(vk, user_id)
         return
 
@@ -1161,5 +1158,4 @@ async def handle_callback(vk, user_id, payload):
         await update_user_async(user_id, state='awaiting_name', context={'step': 'name'})
         return
 
-    # Если ничего не подошло - показываем город
     await show_city(vk, user_id)

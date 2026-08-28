@@ -210,7 +210,7 @@ async def send_guild_message(vk, character_id, guild_id, text):
 
 
 def guild_exp_to_next_level(level):
-    return 1000 + 2500 * (level - 1) if level > 1 else 1000
+    return 1000 + 3500 * (level - 1) if level > 1 else 1000
 
 
 def add_guild_exp(guild_id, exp):
@@ -539,3 +539,64 @@ def get_guild_applications_count(guild_id):
     count = cur.fetchone()[0]
     conn.close()
     return count
+
+    # guild.py - добавить функцию
+
+def get_guild_members_with_activity(guild_id):
+    """Получение участников гильдии с активностью"""
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute('''
+        SELECT 
+            c.id, 
+            c.name, 
+            c.level, 
+            gm.rank,
+            c.guild_exp_contributed,
+            u.last_activity
+        FROM guild_members gm
+        JOIN characters c ON gm.character_id = c.id
+        JOIN users u ON c.vk_id = u.vk_id
+        WHERE gm.guild_id = ?
+        ORDER BY gm.rank DESC, c.guild_exp_contributed DESC
+    ''', (guild_id,))
+    rows = cur.fetchall()
+    conn.close()
+    
+    members = []
+    from datetime import datetime
+    
+    for row in rows:
+        last_activity = row[5]
+        
+        if last_activity:
+            try:
+                last_dt = datetime.fromisoformat(last_activity)
+                now = datetime.now()
+                delta = now - last_dt
+                days = delta.days
+                hours = delta.seconds // 3600
+                minutes = (delta.seconds % 3600) // 60
+                
+                if days > 0:
+                    time_str = f"{days}д {hours}ч назад"
+                elif hours > 0:
+                    time_str = f"{hours}ч {minutes}м назад"
+                elif minutes > 0:
+                    time_str = f"{minutes}м назад"
+                else:
+                    time_str = "только что"
+            except:
+                time_str = "неизвестно"
+        else:
+            time_str = "неизвестно"
+        
+        members.append({
+            'id': row[0],
+            'name': row[1],
+            'level': row[2],
+            'rank': row[3],
+            'guild_exp': row[4] or 0,
+            'last_activity': time_str
+        })
+    return members
