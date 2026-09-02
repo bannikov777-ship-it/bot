@@ -1,4 +1,5 @@
 # locations/city.py
+
 from core import get_character_async, update_user_async, send_message, get_user_async, get_city
 from mail import get_unread_mail_count
 from keyboards import get_city_keyboard, get_lore_keyboard, get_city2_keyboard, get_back_keyboard
@@ -17,6 +18,7 @@ LOR_TEXT = (
 
 CITY_IMAGE = 'photo-240828623_456239022'
 
+
 async def show_city(vk, user_id):
     """Показ города"""
     char = await get_character_async(user_id)
@@ -29,41 +31,46 @@ async def show_city(vk, user_id):
         city = get_city(1)
     text = f"🏘️ {city['name']}\n\n{city['description']}"
     
-    # Проверяем, является ли пользователь администратором для показа доп. кнопки
     keyboard = get_city_keyboard()
     
     if await is_admin(user_id):
-        # Добавляем админ-кнопку в существующую клавиатуру
         keyboard.add_line()
         keyboard.add_button('🛠️ Админ-панель', color=VkKeyboardColor.NEGATIVE, payload={'cmd': 'admin_codes_menu'})
     
     await send_message(vk, user_id, text, keyboard, attachment=city['image_attachment'])
     await update_user_async(user_id, state='city', context={})
+    
     unread = get_unread_mail_count(char['id'])
     if unread > 0:
         await send_message(vk, user_id, f"📬 У вас {unread} непрочитанных писем! Проверьте почту в профиле.")
 
+
+# locations/city.py - show_city2()
+
 async def show_city2(vk, user_id):
-    """Показ второго города"""
+    """Показ Озерного Края (город №2)"""
     char = await get_character_async(user_id)
     if not char:
         await send_message(vk, user_id, 'Сначала создайте персонажа.', get_back_keyboard('город'))
         return
+    
     city = get_city(2)
     if not city:
         await send_message(vk, user_id, '❌ Город ещё не доступен.', get_back_keyboard('луг'))
         return
+    
     text = f"🏘️ {city['name']}\n\n{city['description']}"
     
-    # Проверяем админа для второго города
     keyboard = get_city2_keyboard()
     
     if await is_admin(user_id):
         keyboard.add_line()
         keyboard.add_button('🛠️ Админ-панель', color=VkKeyboardColor.NEGATIVE, payload={'cmd': 'admin_codes_menu'})
     
-    await send_message(vk, user_id, text, keyboard, attachment=city['image_attachment'])
+    # ✅ НОВОЕ ФОТО ДЛЯ ОЗЕРНОГО КРАЯ
+    await send_message(vk, user_id, text, keyboard, attachment='photo-240828623_456239369')
+    
     user_data = await get_user_async(user_id)
     context = user_data['context']
-    context['parent_state'] = 'meadow'
+    context['parent_state'] = 'city2'
     await update_user_async(user_id, state='city2', context=context)

@@ -1,8 +1,10 @@
-# core/render.py
+# core/render.py (ПОЛНАЯ ВЕРСИЯ)
+
 from .character import get_item_prefix, get_character_by_id
 from .stats import CLASS_BASE_STATS, CLASS_GROWTH, NEUTRAL_STATS, NEUTRAL_GROWTH
-from .async_wrappers import get_player_consumables, get_player_herbs, get_player_resources  # ✅ Добавлен get_player_resources
+from .async_wrappers import get_player_consumables, get_player_herbs
 from utils import exp_to_next_level
+from resources import get_player_resources
 
 GENDER_IMAGES = {
     'male': 'photo-240828623_456239242',
@@ -81,8 +83,6 @@ def render_profile(char, equipment):
     return text
 
 
-# core/render.py - исправленная render_inventory (добавляем VIP статус)
-
 def render_inventory(inv_items, equipment, consumables=None, owner_id=None):
     from .async_wrappers import get_player_consumables, get_player_herbs
     from resources import get_player_resources
@@ -102,7 +102,6 @@ def render_inventory(inv_items, equipment, consumables=None, owner_id=None):
             vip_icon = VIP_COLORS.get(vip_level, '')
             vip_name = VIP_NAMES.get(vip_level, '')
             lines.append(f"{vip_icon} {char['name']} [{vip_name}]")
-            # Показываем оставшееся время
             from datetime import datetime
             if expires_at:
                 remaining = datetime.fromisoformat(expires_at) - datetime.now()
@@ -206,7 +205,6 @@ def render_inventory(inv_items, equipment, consumables=None, owner_id=None):
             
             upgrade_star = f" [+{upgrade}]" if upgrade > 0 else ""
             
-            # Формат: Иконка Имя (Ур.X) [+заточка] Редкость Бонусы (xКоличество)
             lines.append(f"{item['icon']} {item['name']} (Ур.{item['level']}){upgrade_star} {star} {rarity_names.get(item['rarity'], '')}{bonus_str} (x{item['quantity']})")
     
     # Расходники

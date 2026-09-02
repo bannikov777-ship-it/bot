@@ -6,6 +6,7 @@ from config import DB_NAME
 def create_auction_lot(seller_type, seller_id, item_type, item_id, quantity, price):
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
+    
     if item_type == 'item':
         cur.execute('SELECT template_id, level, rarity, upgrade_level, quantity FROM player_items WHERE id = ? AND owner_id = ?', (item_id, seller_id))
         row = cur.fetchone()
@@ -29,21 +30,27 @@ def create_auction_lot(seller_type, seller_id, item_type, item_id, quantity, pri
         conn.commit()
         conn.close()
         return lot_id, "Лот создан."
-    else:
-        cur.execute('SELECT consumable_template_id, quantity FROM player_consumables WHERE id = ? AND owner_id = ?', (item_id, seller_id))
+    
+    elif item_type == 'consumable':
+        print(f"🔍 Создание лота для расходника: item_id={item_id}, seller_id={seller_id}")
+        cur.execute('SELECT id, consumable_template_id, quantity FROM player_consumables WHERE id = ? AND owner_id = ?', (item_id, seller_id))
         row = cur.fetchone()
+        print(f"🔍 Результат запроса: {row}")
         if not row:
             conn.close()
-            return None, "Расходник не найден."
-        template_id, qty = row
+            return None, f"Расходник не найден (item_id={item_id}, seller_id={seller_id})"
+        
+        consumable_id, template_id, qty = row
         if qty < quantity:
             conn.close()
             return None, "Недостаточно расходников."
+        
         new_qty = qty - quantity
         if new_qty == 0:
-            cur.execute('DELETE FROM player_consumables WHERE id = ?', (item_id,))
+            cur.execute('DELETE FROM player_consumables WHERE id = ?', (consumable_id,))
         else:
-            cur.execute('UPDATE player_consumables SET quantity = ? WHERE id = ?', (new_qty, item_id))
+            cur.execute('UPDATE player_consumables SET quantity = ? WHERE id = ?', (new_qty, consumable_id))
+        
         cur.execute('''
             INSERT INTO auction_lots (seller_type, seller_id, item_type, template_id, quantity, price, expires_at)
             VALUES (?, ?, ?, ?, ?, ?, datetime('now', '+24 hours'))
@@ -52,6 +59,10 @@ def create_auction_lot(seller_type, seller_id, item_type, item_id, quantity, pri
         conn.commit()
         conn.close()
         return lot_id, "Лот создан."
+    
+    else:
+        conn.close()
+        return None, "Неизвестный тип предмета."
 
 def get_active_auction_lots(limit=20, offset=0):
     expire_and_return_expired()

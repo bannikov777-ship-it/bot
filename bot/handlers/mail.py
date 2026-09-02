@@ -16,8 +16,14 @@ async def show_mail(vk, user_id):
         return
     mail_list = get_mail(char['id'])
     if not mail_list:
-        await send_message(vk, user_id, '📭 У вас нет писем.', get_mail_keyboard())
+        # ✅ КНОПКИ "НАПИСАТЬ ПИСЬМО" И "В ЛАГЕРЬ"
+        keyboard = VkKeyboard()
+        keyboard.add_button('📝 Написать письмо', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'mail_write'})
+        keyboard.add_line()
+        keyboard.add_button('🏕️ В лагерь', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_camp'})
+        await send_message(vk, user_id, '📭 У вас нет писем.', keyboard)
         return
+    
     text = "📬 Ваши письма:\n\n"
     keyboard = VkKeyboard()
     for m in mail_list:
@@ -27,13 +33,16 @@ async def show_mail(vk, user_id):
         keyboard.add_button(f"📖 {m['subject'][:15]}", color=VkKeyboardColor.PRIMARY, 
                             payload={'cmd': 'mail_read', 'mail_id': m['id']})
         keyboard.add_line()
+    
+    # ✅ КНОПКИ "НАПИСАТЬ ПИСЬМО" И "В ЛАГЕРЬ"
     keyboard.add_button('📝 Написать письмо', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'mail_write'})
     keyboard.add_line()
-    keyboard.add_button('👤 В профиль', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_profile'})
+    keyboard.add_button('🏕️ В лагерь', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_camp'})
+    
     await send_message(vk, user_id, text, keyboard)
     user_data = await get_user_async(user_id)
     context = user_data['context']
-    context['parent_state'] = 'profile'
+    context['parent_state'] = 'camp'
     await update_user_async(user_id, state='mail', context=context)
 
 
@@ -70,7 +79,7 @@ async def show_mail_read(vk, user_id, mail_id):
         keyboard.add_line()
     keyboard.add_button('🗑 Удалить', color=VkKeyboardColor.NEGATIVE, 
                        payload={'cmd': 'mail_delete', 'mail_id': mail_id})
-    keyboard.add_button('📬 На почту', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_profile'})
+    keyboard.add_button('🏕️ В лагерь', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_camp'})
     
     await send_message(vk, user_id, text, keyboard)
     user_data = await get_user_async(user_id)
@@ -87,7 +96,7 @@ async def show_mail_delete(vk, user_id, mail_id):
         await send_message(vk, user_id, 'Сначала создайте персонажа.', get_back_keyboard('город'))
         return
     delete_mail(mail_id, char['id'])
-    await send_message(vk, user_id, '✅ Письмо удалено.', get_mail_keyboard())
+    await send_message(vk, user_id, '✅ Письмо удалено.', get_back_keyboard('лагерь'))
     await show_mail(vk, user_id)
 
 
@@ -117,7 +126,7 @@ async def show_mail_write_subject(vk, user_id, recipient_input):
         row = cur.fetchone()
         if not row:
             conn.close()
-            await send_message(vk, user_id, f'❌ Игрок с ID {recipient_id} не найден.', get_mail_keyboard())
+            await send_message(vk, user_id, f'❌ Игрок с ID {recipient_id} не найден.', get_back_keyboard('лагерь'))
             return
         recipient_id, recipient_name = row
     except ValueError:
@@ -125,14 +134,14 @@ async def show_mail_write_subject(vk, user_id, recipient_input):
         row = cur.fetchone()
         if not row:
             conn.close()
-            await send_message(vk, user_id, f'❌ Игрок с именем "{recipient_input}" не найден.', get_mail_keyboard())
+            await send_message(vk, user_id, f'❌ Игрок с именем "{recipient_input}" не найден.', get_back_keyboard('лагерь'))
             return
         recipient_id, recipient_name = row
     
     conn.close()
     
     if recipient_id == char['id']:
-        await send_message(vk, user_id, '❌ Нельзя отправить письмо самому себе.', get_mail_keyboard())
+        await send_message(vk, user_id, '❌ Нельзя отправить письмо самому себе.', get_back_keyboard('лагерь'))
         return
     
     user_data = await get_user_async(user_id)
@@ -165,13 +174,14 @@ async def show_mail_send(vk, user_id, body):
 
 
 async def show_mail_attachment_menu(vk, user_id):
-    """Меню вложения (без расходников)"""
+    """Меню вложения"""
     keyboard = VkKeyboard()
     keyboard.add_button('💰 Деньги', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'mail_attach_money'})
     keyboard.add_button('🗡️ Предметы', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'mail_attach_item'})
     keyboard.add_line()
     keyboard.add_button('📝 Без вложения', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'mail_attach_none'})
-    keyboard.add_button('📬 На почту', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_profile'})
+    keyboard.add_line()
+    keyboard.add_button('🏕️ В лагерь', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_camp'})
     
     user_data = await get_user_async(user_id)
     context = user_data['context']
@@ -194,14 +204,14 @@ async def show_mail_attach_money(vk, user_id):
     context = user_data['context']
     
     if not context.get('mail_recipient_id'):
-        await send_message(vk, user_id, '❌ Ошибка: получатель не найден. Попробуйте начать заново.', get_mail_keyboard())
+        await send_message(vk, user_id, '❌ Ошибка: получатель не найден. Попробуйте начать заново.', get_back_keyboard('лагерь'))
         context.pop('mail_recipient_id', None)
         context.pop('mail_subject', None)
         context.pop('mail_body', None)
         await update_user_async(user_id, state='mail', context=context)
         return
     if not context.get('mail_subject'):
-        await send_message(vk, user_id, '❌ Ошибка: тема письма не найдена. Попробуйте начать заново.', get_mail_keyboard())
+        await send_message(vk, user_id, '❌ Ошибка: тема письма не найдена. Попробуйте начать заново.', get_back_keyboard('лагерь'))
         context.pop('mail_recipient_id', None)
         context.pop('mail_subject', None)
         context.pop('mail_body', None)
@@ -223,14 +233,14 @@ async def show_mail_attach_item(vk, user_id):
     context = user_data['context']
     
     if not context.get('mail_recipient_id'):
-        await send_message(vk, user_id, '❌ Ошибка: получатель не найден. Попробуйте начать заново.', get_mail_keyboard())
+        await send_message(vk, user_id, '❌ Ошибка: получатель не найден. Попробуйте начать заново.', get_back_keyboard('лагерь'))
         context.pop('mail_recipient_id', None)
         context.pop('mail_subject', None)
         context.pop('mail_body', None)
         await update_user_async(user_id, state='mail', context=context)
         return
     if not context.get('mail_subject'):
-        await send_message(vk, user_id, '❌ Ошибка: тема письма не найдена. Попробуйте начать заново.', get_mail_keyboard())
+        await send_message(vk, user_id, '❌ Ошибка: тема письма не найдена. Попробуйте начать заново.', get_back_keyboard('лагерь'))
         context.pop('mail_recipient_id', None)
         context.pop('mail_subject', None)
         context.pop('mail_body', None)
@@ -239,7 +249,7 @@ async def show_mail_attach_item(vk, user_id):
     
     items = get_player_items(char['id'])
     if not items:
-        await send_message(vk, user_id, 'У вас нет предметов для отправки.', get_mail_attachment_keyboard())
+        await send_message(vk, user_id, 'У вас нет предметов для отправки.', get_back_keyboard('лагерь'))
         return
     
     keyboard = VkKeyboard()
@@ -248,7 +258,7 @@ async def show_mail_attach_item(vk, user_id):
         keyboard.add_button(label, color=VkKeyboardColor.PRIMARY,
                             payload={'cmd': 'mail_attach_item_select', 'item_id': item['id']})
         keyboard.add_line()
-    keyboard.add_button('📬 На почту', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_profile'})
+    keyboard.add_button('🏕️ В лагерь', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_camp'})
     await send_message(vk, user_id, 'Выберите предмет для отправки:', keyboard)
     user_data = await get_user_async(user_id)
     context = user_data['context']
@@ -266,14 +276,14 @@ async def show_mail_attach_quantity(vk, user_id, item_id, item_type):
     context = user_data['context']
     
     if not context.get('mail_recipient_id'):
-        await send_message(vk, user_id, '❌ Ошибка: получатель не найден. Попробуйте начать заново.', get_mail_keyboard())
+        await send_message(vk, user_id, '❌ Ошибка: получатель не найден. Попробуйте начать заново.', get_back_keyboard('лагерь'))
         context.pop('mail_recipient_id', None)
         context.pop('mail_subject', None)
         context.pop('mail_body', None)
         await update_user_async(user_id, state='mail', context=context)
         return
     if not context.get('mail_subject'):
-        await send_message(vk, user_id, '❌ Ошибка: тема письма не найдена. Попробуйте начать заново.', get_mail_keyboard())
+        await send_message(vk, user_id, '❌ Ошибка: тема письма не найдена. Попробуйте начать заново.', get_back_keyboard('лагерь'))
         context.pop('mail_recipient_id', None)
         context.pop('mail_subject', None)
         context.pop('mail_body', None)
@@ -296,7 +306,7 @@ async def show_mail_attach_quantity(vk, user_id, item_id, item_type):
         max_qty = row[0] if row else 0
     
     if max_qty <= 0:
-        await send_message(vk, user_id, 'У вас нет этого предмета.', get_mail_attachment_keyboard())
+        await send_message(vk, user_id, 'У вас нет этого предмета.', get_back_keyboard('лагерь'))
         return
     
     context['mail_attachment_id'] = item_id
@@ -315,7 +325,7 @@ async def show_mail_attach_none(vk, user_id):
     if body:
         await show_mail_send_with_attachment(vk, user_id, body)
     else:
-        await send_message(vk, user_id, 'Ошибка: тело письма не найдено.', get_mail_attachment_keyboard())
+        await send_message(vk, user_id, 'Ошибка: тело письма не найдено.', get_back_keyboard('лагерь'))
 
 
 async def show_mail_claim_attachment(vk, user_id, mail_id):
@@ -326,9 +336,9 @@ async def show_mail_claim_attachment(vk, user_id, mail_id):
         return
     success, msg = claim_attachment(mail_id, char['id'])
     if success:
-        await send_message(vk, user_id, f'✅ {msg}', get_mail_keyboard())
+        await send_message(vk, user_id, f'✅ {msg}', get_back_keyboard('лагерь'))
     else:
-        await send_message(vk, user_id, f'❌ {msg}', get_mail_keyboard())
+        await send_message(vk, user_id, f'❌ {msg}', get_back_keyboard('лагерь'))
     await show_mail(vk, user_id)
 
 
@@ -347,7 +357,7 @@ async def show_mail_send_with_attachment(vk, user_id, body):
     print(f"📨 Отправка письма: recipient_id={recipient_id}, subject={subject}, att_type={att_type}, att_id={att_id}, att_qty={att_qty}, att_silver={att_silver}")
     
     if not recipient_id:
-        await send_message(vk, user_id, '❌ Ошибка: не указан получатель. Попробуйте начать заново.', get_mail_keyboard())
+        await send_message(vk, user_id, '❌ Ошибка: не указан получатель. Попробуйте начать заново.', get_back_keyboard('лагерь'))
         context.pop('mail_recipient_id', None)
         context.pop('mail_subject', None)
         context.pop('mail_attachment_type', None)
@@ -356,7 +366,7 @@ async def show_mail_send_with_attachment(vk, user_id, body):
         return
     
     if not subject:
-        await send_message(vk, user_id, '❌ Ошибка: не указана тема письма. Попробуйте начать заново.', get_mail_keyboard())
+        await send_message(vk, user_id, '❌ Ошибка: не указана тема письма. Попробуйте начать заново.', get_back_keyboard('лагерь'))
         context.pop('mail_recipient_id', None)
         context.pop('mail_subject', None)
         context.pop('mail_attachment_type', None)
@@ -375,7 +385,7 @@ async def show_mail_send_with_attachment(vk, user_id, body):
     )
     
     if success:
-        await send_message(vk, user_id, f'✅ {msg}', get_mail_keyboard())
+        await send_message(vk, user_id, f'✅ {msg}', get_back_keyboard('лагерь'))
         context.pop('mail_recipient_id', None)
         context.pop('mail_recipient_name', None)
         context.pop('mail_subject', None)
@@ -388,5 +398,5 @@ async def show_mail_send_with_attachment(vk, user_id, body):
         await update_user_async(user_id, state='mail', context=context)
         await show_mail(vk, user_id)
     else:
-        await send_message(vk, user_id, f'❌ {msg}', get_mail_keyboard())
+        await send_message(vk, user_id, f'❌ {msg}', get_back_keyboard('лагерь'))
         await show_mail(vk, user_id)

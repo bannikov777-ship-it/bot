@@ -1,4 +1,4 @@
-# locations/callback_handler.py
+# locations/callback_handler.py (ПОЛНЫЙ ИСПРАВЛЕННЫЙ)
 
 import sqlite3
 import asyncio
@@ -23,13 +23,12 @@ from scheduler import scheduler
 from locations.tavern import restore_after_sleep
 from handlers.mail import show_mail, show_mail_read, show_mail_delete, show_mail_write
 from handlers.tower_handlers import handle_tower_commands
-from handlers.guild_quests import handle_guild_quests
 from admin import admin_codes_menu, admin_show_codes, admin_create_code
 from locations.admin_panel import show_admin_panel
 from locations.scrolls import show_scrolls, use_scroll
 from locations.premium import show_premium_shop, show_premium_buy_prompt, show_premium_buy_confirm, show_premium_buy_execute
 from locations.codes import show_codes_menu, process_code_enter
-from handlers.guild_quests import handle_guild_quests
+
 
 from . import (
     show_city, show_city2, show_guild, show_market, show_healer,
@@ -184,17 +183,21 @@ async def handle_callback(vk, user_id, payload):
     if await handle_tower_commands(vk, user_id, cmd, payload):
         return
 
-    if await handle_guild_quests(vk, user_id, cmd, payload):
-        return
 
     if cmd.startswith('battle_'):
         action = cmd[7:]
         await process_battle_action(vk, user_id, action, payload)
         return
 
+    # ---- НАВИГАЦИЯ ----
     if cmd == 'go_city':
         from .base import navigate_to
         await navigate_to(vk, user_id, 'city')
+        return
+
+    if cmd == 'go_city2':
+        from .base import navigate_to
+        await navigate_to(vk, user_id, 'city2')
         return
 
     if cmd == 'go_meadow':
@@ -229,7 +232,6 @@ async def handle_callback(vk, user_id, payload):
     if cmd == 'go_profile':
         user_data = await get_user_async(user_id)
         current_state = user_data['state']
-        # ✅ Разрешаем из города И из инвентаря
         if current_state not in ['city', 'city2', 'inventory']:
             await send_message(vk, user_id, '❌ Профиль доступен только в городе или из инвентаря!')
             await show_city(vk, user_id)
@@ -237,17 +239,6 @@ async def handle_callback(vk, user_id, payload):
         context = user_data['context']
         context['parent_state'] = 'city'
         await update_user_async(user_id, context=context)
-        await show_profile(vk, user_id)
-        return
-
-    if cmd == 'profile':
-        user_data = await get_user_async(user_id)
-        current_state = user_data['state']
-        # ✅ Разрешаем из города И из инвентаря
-        if current_state not in ['city', 'city2', 'inventory']:
-            await send_message(vk, user_id, '❌ Профиль доступен только в городе или из инвентаря!')
-            await show_city(vk, user_id)
-            return
         await show_profile(vk, user_id)
         return
 
@@ -305,7 +296,7 @@ async def handle_callback(vk, user_id, payload):
             await send_message(vk, user_id, f'📋 Код скопирован:\n`{code}`')
         return
 
-    # ---- ОСТАЛЬНЫЕ КОМАНДЫ (без изменений) ----
+    # ---- СВИТКИ ----
     if cmd == 'scrolls':
         await show_scrolls(vk, user_id)
         return
@@ -315,10 +306,13 @@ async def handle_callback(vk, user_id, payload):
         scroll_type = payload.get('type', 'curse_remove')
         if scroll_id:
             await use_scroll(vk, user_id, scroll_id, scroll_type)
+            # ✅ После использования свитка показываем список свитков
+            await show_scrolls(vk, user_id)
         else:
             await send_message(vk, user_id, '❌ Ошибка: свиток не найден.', get_back_keyboard('инвентарь'))
         return
 
+    # ---- ПРЕМИУМ МАГАЗИН ----
     if cmd == 'premium_shop':
         await show_premium_shop(vk, user_id)
         return
@@ -573,9 +567,30 @@ async def handle_callback(vk, user_id, payload):
         await show_rating(vk, user_id)
         return
 
-    # ---- ГИЛЬДИИ ----
+        # ---- ГИЛЬДИИ ----
+
     if cmd == 'guild':
-        await show_guild(vk, user_id)
+        from locations.guild import show_guild
+        user_data = await get_user_async(user_id)
+        current_state = user_data['state']
+        
+        # ✅ Если в Стальном Троне — сообщение
+        if current_state == 'city':
+            await send_message(vk, user_id, 
+                '🏰 Зал гильдии находится в Озерном Крае!\n'
+                'Отправляйтесь в Озерный Край через мост.',
+                get_back_keyboard('город'))
+            return
+        
+        # ✅ Если в Озерном Крае или уже в гильдии — показываем
+        await show_guild(vk, user_id, 'город2')
+        return
+        
+        if current_state == 'city2' or current_state == 'guild':
+            await show_guild(vk, user_id, 'город2')
+        else:
+            await send_message(vk, user_id, '❌ Гильдия доступна только в городе!')
+            await show_city2(vk, user_id)
         return
 
     if cmd == 'guild_list':
@@ -590,14 +605,19 @@ async def handle_callback(vk, user_id, payload):
 
     if cmd == 'guild_apply_confirm':
         guild_id = payload.get('guild_id')
+        print(f"🔍 guild_apply_confirm: guild_id={guild_id}")  # ОТЛАДКА
         if guild_id:
             from locations.guild import show_guild_apply_confirm
             await show_guild_apply_confirm(vk, user_id, guild_id)
+        else:
+            await send_message(vk, user_id, '❌ Ошибка: ID гильдии не указан.', get_back_keyboard('город2'))
         return
 
     if cmd == 'guild_create':
+        user_data = await get_user_async(user_id)
+        parent = user_data['context'].get('parent_state', 'город')
         await send_message(vk, user_id, 'Введите название гильдии (макс. 30 символов):')
-        await update_user_async(user_id, state='awaiting_guild_name', context={'parent_state': 'guild'})
+        await update_user_async(user_id, state='awaiting_guild_name', context={'parent_state': parent})
         return
 
     if cmd == 'guild_join':
@@ -779,7 +799,54 @@ async def handle_callback(vk, user_id, payload):
         await update_user_async(user_id, state='awaiting_guild_reject', context={'parent_state': 'guild_applications'})
         return
 
-    # ---- ТАВЕРНА ----
+    if cmd == 'guild_disband':
+        from locations.guild import show_guild_disband_confirm
+        await show_guild_disband_confirm(vk, user_id)
+        return
+
+    if cmd == 'guild_disband_confirm':
+        from locations.guild import show_guild_disband_execute
+        await show_guild_disband_execute(vk, user_id)
+        return
+
+    # ---- КВЕСТЫ ГИЛЬДИИ ----
+    if cmd == 'guild_quests':
+        from locations.guild import show_guild_quests
+        await show_guild_quests(vk, user_id)
+        return
+
+    if cmd == 'guild_quest_status':
+        from locations.guild import show_guild_quest_status
+        await show_guild_quest_status(vk, user_id)
+        return
+
+    if cmd == 'guild_quest_take':
+        quest_id = payload.get('quest_id')
+        if quest_id:
+            from handlers.guild_quests import take_guild_quest
+            success, msg = await take_guild_quest(vk, user_id, quest_id)
+            await send_message(vk, user_id, msg)
+            from locations.guild import show_guild
+            await show_guild(vk, user_id)
+        return
+
+    if cmd == 'guild_quest_complete_manual':
+        from guild_quests import complete_guild_quest_manual
+        success, msg = await complete_guild_quest_manual(vk, user_id)
+        await send_message(vk, user_id, msg)
+        from locations.guild import show_guild
+        await show_guild(vk, user_id)
+        return
+
+    if cmd == 'guild_quest_cancel':
+        from guild_quests import cancel_guild_quest
+        success, msg = await cancel_guild_quest(vk, user_id)
+        await send_message(vk, user_id, msg)
+        from locations.guild import show_guild
+        await show_guild(vk, user_id)
+        return
+    
+    # ---- ТАВЕРНА 1 ----
     if cmd == 'tavern':
         await show_tavern(vk, user_id)
         return
@@ -808,7 +875,7 @@ async def handle_callback(vk, user_id, payload):
         await update_user_async(user_id, state='tavern_rumors', context=context)
         return
 
-    # ---- ЕДА ----
+    # ---- ЕДА 1 ----
     if cmd == 'buy_food':
         percent = payload.get('percent')
         price = payload.get('price')
@@ -831,7 +898,7 @@ async def handle_callback(vk, user_id, payload):
         await show_tavern(vk, user_id)
         return
 
-    # ---- СОН ----
+    # ---- СОН 1 ----
     if cmd == 'sleep':
         percent = payload.get('percent')
         hours = payload.get('hours', 1)
@@ -883,7 +950,231 @@ async def handle_callback(vk, user_id, payload):
         await show_tavern(vk, user_id)
         return
 
-    # ---- АУКЦИОН ----
+    # ---- ВТОРОЙ ГОРОД (ВСЕ КОМАНДЫ В ОДНОМ БЛОКЕ) ----
+    
+    # ---- ТАВЕРНА 2 ----
+    if cmd == 'go_tavern2':
+        from locations.tavern2 import show_tavern2
+        await show_tavern2(vk, user_id)
+        return
+
+    if cmd == 'tavern2_food':
+        from locations.tavern2 import show_tavern2_food
+        await show_tavern2_food(vk, user_id)
+        return
+
+    if cmd == 'tavern2_room':
+        from locations.tavern2 import show_tavern2_room
+        await show_tavern2_room(vk, user_id)
+        return
+
+    if cmd == 'tavern2_rumors':
+        from locations.tavern2 import show_tavern2_rumors
+        await show_tavern2_rumors(vk, user_id)
+        return
+
+    if cmd == 'buy_food2':
+        percent = payload.get('percent')
+        price = payload.get('price')
+        from locations.tavern2 import buy_food2
+        await buy_food2(vk, user_id, percent, price)
+        return
+
+    if cmd == 'sleep2':
+        hours = payload.get('hours', 1)
+        percent = payload.get('percent', 25)
+        from locations.tavern2 import sleep2
+        await sleep2(vk, user_id, hours, percent)
+        return
+
+    if cmd == 'sleep2_check':
+        from locations.tavern2 import sleep2_check
+        await sleep2_check(vk, user_id)
+        return
+
+    if cmd == 'sleep2_cancel':
+        from locations.tavern2 import sleep2_cancel
+        await sleep2_cancel(vk, user_id)
+        return
+
+    # ---- РАТУША 2 ----
+    if cmd == 'town_hall2':
+        from locations.town_hall2 import show_town_hall2
+        await show_town_hall2(vk, user_id)
+        return
+
+    if cmd == 'rating2':
+        from locations.town_hall2 import show_rating2
+        await show_rating2(vk, user_id)
+        return
+
+    # ---- РЫНОК 2 ----
+    if cmd == 'go_market2':
+        from locations.market2 import show_market2
+        await show_market2(vk, user_id)
+        return
+
+    if cmd == 'market2_weapons' or cmd == 'market2_armor' or cmd == 'market2_gear' or cmd == 'market2_crystals':
+        from locations.market2 import show_market2_category
+        category = cmd.replace('market2_', '')
+        await show_market2_category(vk, user_id, category)
+        return
+
+    if cmd == 'market2_buy':
+        item_name = payload.get('item_name')
+        price = payload.get('price')
+        level = payload.get('level')
+        from locations.market2 import show_market2_buy
+        await show_market2_buy(vk, user_id, item_name, price, level)
+        return
+
+    # ---- КУЗНИЦА 2 ----
+    if cmd == 'go_smithy2':
+        from locations.smithy2 import show_smithy2
+        await show_smithy2(vk, user_id)
+        return
+
+    if cmd == 'smithy2_select_item':
+        item_id = payload.get('item_id')
+        from locations.smithy2 import show_smithy2_upgrade_menu
+        await show_smithy2_upgrade_menu(vk, user_id, item_id)
+        return
+
+    if cmd == 'smithy2_upgrade':
+        crystal_id = payload.get('crystal_id')
+        from locations.smithy2 import show_smithy2_upgrade
+        await show_smithy2_upgrade(vk, user_id, crystal_id)
+        return
+
+  # ---- АУКЦИОН 2 ----
+    if cmd == 'go_auction2':
+        from locations.auction2 import show_auction2
+        await show_auction2(vk, user_id)
+        return
+
+    if cmd == 'auction2_refresh':
+        from locations.auction2 import show_auction2
+        user_data = await get_user_async(user_id)
+        page = user_data['context'].get('auction2_page', 0)
+        await show_auction2(vk, user_id, page)
+        return
+
+    if cmd == 'auction2_buy_prompt':
+        from locations.auction2 import show_auction2_buy_prompt
+        await show_auction2_buy_prompt(vk, user_id)
+        return
+
+    if cmd == 'auction2_buy_confirm':
+        lot_id = payload.get('lot_id')
+        from locations.auction2 import show_auction2_buy_confirm
+        await show_auction2_buy_confirm(vk, user_id, lot_id)
+        return
+
+    if cmd == 'auction2_sell':
+        from locations.auction2 import show_auction2_sell_menu
+        await show_auction2_sell_menu(vk, user_id)
+        return
+
+    if cmd == 'auction2_sell_items':
+        from locations.auction2 import show_auction2_sell_select_items
+        await show_auction2_sell_select_items(vk, user_id, 'item')
+        return
+
+    if cmd == 'auction2_sell_consumables':
+        from locations.auction2 import show_auction2_sell_select_items
+        await show_auction2_sell_select_items(vk, user_id, 'consumable')
+        return
+
+    if cmd == 'auction2_sell_select_item':
+        item_type = payload.get('item_type')
+        item_id = payload.get('item_id')
+        print(f"🔍 auction2_sell_select_item: item_type={item_type}, item_id={item_id}")  # ✅ ОТЛАДКА
+        if item_type and item_id:
+            from locations.auction2 import show_auction2_sell_price
+            await show_auction2_sell_price(vk, user_id, item_type, item_id)
+        else:
+            await send_message(vk, user_id, '❌ Ошибка: предмет не указан.', get_back_keyboard('город2'))
+        return
+
+    # ✅ ЭТОТ БЛОК ОТСУТСТВУЕТ!
+    if cmd == 'auction2_sell_price':
+        price = payload.get('price')
+        if price:
+            from locations.auction2 import show_auction2_sell_execute
+            await show_auction2_sell_execute(vk, user_id, price)
+        return
+
+    # ---- ГИЛЬДИЯ ОХОТНИКОВ 2 ----
+    if cmd == 'go_hunters2':
+        from locations.hunters2 import show_hunters2
+        await show_hunters2(vk, user_id)
+        return
+
+    if cmd == 'hunters2_sell':
+        from locations.hunters2 import show_hunters2_sell
+        await show_hunters2_sell(vk, user_id)
+        return
+
+    if cmd == 'hunters2_quests':
+        from locations.hunters2 import show_hunters2_quests
+        await show_hunters2_quests(vk, user_id)
+        return
+
+    if cmd == 'hunters2_my_quests':
+        from locations.hunters2 import show_hunters2_my_quests
+        await show_hunters2_my_quests(vk, user_id)
+        return
+
+    if cmd == 'hunters2_take_quest':
+        quest_id = payload.get('quest_id')
+        from locations.hunters2 import show_hunters2_take_quest
+        await show_hunters2_take_quest(vk, user_id, quest_id)
+        return
+
+    # ---- СОБОР 2 ----
+    if cmd == 'go_church2':
+        from locations.church2 import show_church2
+        await show_church2(vk, user_id)
+        return
+
+    if cmd == 'church2_remove_debuff':
+        from locations.church2 import show_church2_remove_debuff
+        await show_church2_remove_debuff(vk, user_id, 1)
+        return
+
+    if cmd == 'church2_remove_tower_debuff':
+        from locations.church2 import show_church2_remove_debuff
+        await show_church2_remove_debuff(vk, user_id, 2)
+        return
+
+    # ---- МОСТ ----
+    if cmd == 'go_bridge':
+        from locations.bridge import show_bridge
+        await show_bridge(vk, user_id)
+        return
+
+    if cmd == 'bridge_to_meadow':
+        from .base import navigate_to
+        await navigate_to(vk, user_id, 'meadow')
+        return
+
+    if cmd == 'bridge_to_city2':
+        from .base import navigate_to
+        await navigate_to(vk, user_id, 'city2')
+        return
+
+    if cmd == 'exit_city2':
+        from locations.bridge import show_bridge
+        await show_bridge(vk, user_id)
+        return
+
+    # ---- ПОБЕРЕЖЬЕ ----
+    if cmd == 'go_shore':
+        from locations.shore import show_shore
+        await show_shore(vk, user_id)
+        return
+
+    # ---- АУКЦИОН 1 ----
     if cmd == 'market_auction':
         await show_auction(vk, user_id)
         return
@@ -955,7 +1246,7 @@ async def handle_callback(vk, user_id, payload):
         await show_auction(vk, user_id)
         return
 
-    # ---- ГИЛЬДИЯ ОХОТНИКОВ ----
+    # ---- ГИЛЬДИЯ ОХОТНИКОВ 1 ----
     if cmd == 'hunters':
         await show_hunters(vk, user_id)
         return
@@ -1086,6 +1377,17 @@ async def handle_callback(vk, user_id, payload):
         await graveyard_wander(vk, user_id)
         return
 
+     # ---- ЛАГЕРЬ ----
+    if cmd == 'go_camp':
+        from locations.camp import show_camp
+        await show_camp(vk, user_id)
+        return
+
+    if cmd == 'camp':
+        from locations.camp import show_camp
+        await show_camp(vk, user_id)
+        return
+
     # ---- ОСТАЛЬНЫЕ КОМАНДЫ ----
     if cmd == 'back_to_city':
         await show_city(vk, user_id)
@@ -1093,19 +1395,56 @@ async def handle_callback(vk, user_id, payload):
 
     if cmd == 'profile':
         user_data = await get_user_async(user_id)
-        if user_data['state'] not in ['city', 'city2']:
-            await send_message(vk, user_id, '❌ Профиль доступен только в городе!')
+        current_state = user_data['state']
+        context = user_data['context']
+        
+        # ✅ Добавляем 'camp' в разрешённые состояния
+        if current_state not in ['city', 'city2', 'inventory', 'camp']:
+            await send_message(vk, user_id, '❌ Профиль доступен только в городе, инвентаре или лагере!')
             await show_city(vk, user_id)
             return
+        
+        context['parent_state'] = 'camp'
+        await update_user_async(user_id, context=context)
+        await show_profile(vk, user_id)
+        return
+
+    if cmd == 'go_profile':
+        user_data = await get_user_async(user_id)
+        current_state = user_data['state']
+        context = user_data['context']
+        
+        # ✅ Добавляем 'camp' в разрешённые состояния
+        if current_state not in ['city', 'city2', 'inventory', 'camp']:
+            await send_message(vk, user_id, '❌ Профиль доступен только в городе, инвентаре или лагере!')
+            await show_city(vk, user_id)
+            return
+        
+        context['parent_state'] = 'camp'
+        await update_user_async(user_id, context=context)
+        await show_profile(vk, user_id)
+        return
+        
+        # ✅ Сохраняем parent_state
+        if current_state == 'city2':
+            context['parent_state'] = 'city2'
+        elif current_state == 'inventory':
+            context['parent_state'] = context.get('parent_state', 'city')
+        else:
+            context['parent_state'] = 'city'
+        
+        await update_user_async(user_id, context=context)
         await show_profile(vk, user_id)
         return
 
     if cmd == 'exit_city':
+        from locations.exit import show_exit
         await show_exit(vk, user_id)
         return
 
     if cmd == 'exit_city2':
-        await show_meadow(vk, user_id)
+        from locations.bridge import show_bridge
+        await show_bridge(vk, user_id)
         return
 
     if cmd == 'forest':
@@ -1129,6 +1468,7 @@ async def handle_callback(vk, user_id, payload):
         return
 
     if cmd == 'town_hall':
+        from locations.town_hall import show_town_hall
         await show_town_hall(vk, user_id)
         return
 

@@ -5,8 +5,10 @@ import asyncio
 from config import DB_NAME
 from core import get_character_by_id, send_message, get_character_by_id_async
 from items import get_item_stats
+from datetime import datetime, timedelta
 
 def create_guild(leader_id, name):
+    """Создание гильдии с обнулением всей активности"""
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     cur.execute('SELECT guild_id FROM guild_members WHERE character_id = ?', (leader_id,))
@@ -17,12 +19,23 @@ def create_guild(leader_id, name):
     guild_id = cur.lastrowid
     cur.execute('INSERT INTO guild_members (guild_id, character_id, rank) VALUES (?, ?, ?)',
                 (guild_id, leader_id, 'Лидер'))
+    
+    # ✅ ОБНУЛЯЕМ ВСЮ АКТИВНОСТЬ
+    cur.execute('''
+        UPDATE characters 
+        SET guild_exp_contributed = 0, 
+            guild_exp_weekly = 0, 
+            guild_exp_updated_at = CURRENT_TIMESTAMP 
+        WHERE id = ?
+    ''', (leader_id,))
+    
     conn.commit()
     conn.close()
     return guild_id, f"Гильдия «{name}» создана!"
 
 
 def join_guild(character_id, guild_id):
+    """Вступление в гильдию с обнулением всей активности"""
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     cur.execute('SELECT guild_id FROM guild_members WHERE character_id = ?', (character_id,))
@@ -39,7 +52,18 @@ def join_guild(character_id, guild_id):
     if count >= row[1]:
         conn.close()
         return False, "Гильдия заполнена."
+    
     cur.execute('INSERT INTO guild_members (guild_id, character_id) VALUES (?, ?)', (guild_id, character_id))
+    
+    # ✅ ОБНУЛЯЕМ ВСЮ АКТИВНОСТЬ
+    cur.execute('''
+        UPDATE characters 
+        SET guild_exp_contributed = 0, 
+            guild_exp_weekly = 0, 
+            guild_exp_updated_at = CURRENT_TIMESTAMP 
+        WHERE id = ?
+    ''', (character_id,))
+    
     conn.commit()
     conn.close()
     return True, "Вы вступили в гильдию!"
@@ -69,10 +93,12 @@ def leave_guild(character_id):
 
 
 def get_guild(guild_id):
+    print(f"🔍 get_guild вызван с ID: {guild_id}")  # ОТЛАДКА
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     cur.execute('SELECT id, name, leader_id, level, exp, silver, max_members FROM guilds WHERE id = ?', (guild_id,))
     row = cur.fetchone()
+    print(f"🔍 Результат запроса: {row}")  # ОТЛАДКА
     conn.close()
     if row:
         return {
@@ -400,7 +426,7 @@ def get_guilds_list(page=1, per_page=5):
     guilds = []
     for row in rows:
         guilds.append({
-            'id': row[0],
+            'id': row[0],        # ✅ ID ГИЛЬДИИ
             'name': row[1],
             'level': row[2],
             'silver': row[3],
@@ -464,12 +490,11 @@ def apply_to_guild(player_id, guild_id):
 
 
 def accept_application(application_id, reviewer_id):
-    """Принятие заявки"""
+    """Принятие заявки с обнулением всей активности"""
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     
-    cur.execute('SELECT guild_id, player_id FROM guild_applications WHERE id = ? AND status = "pending"',
-                (application_id,))
+    cur.execute('SELECT guild_id, player_id FROM guild_applications WHERE id = ? AND status = "pending"', (application_id,))
     row = cur.fetchone()
     if not row:
         conn.close()
@@ -485,14 +510,18 @@ def accept_application(application_id, reviewer_id):
         conn.close()
         return False, "Гильдия заполнена."
     
-    cur.execute('INSERT INTO guild_members (guild_id, character_id, rank) VALUES (?, ?, ?)',
-                (guild_id, player_id, 'Участник'))
+    cur.execute('INSERT INTO guild_members (guild_id, character_id, rank) VALUES (?, ?, ?)', (guild_id, player_id, 'Участник'))
     
+    # ✅ ОБНУЛЯЕМ ВСЮ АКТИВНОСТЬ
     cur.execute('''
-        UPDATE guild_applications 
-        SET status = 'accepted', reviewed_at = CURRENT_TIMESTAMP, reviewed_by = ?
+        UPDATE characters 
+        SET guild_exp_contributed = 0, 
+            guild_exp_weekly = 0, 
+            guild_exp_updated_at = CURRENT_TIMESTAMP 
         WHERE id = ?
-    ''', (reviewer_id, application_id))
+    ''', (player_id,))
+    
+    cur.execute('''UPDATE guild_applications SET status = 'accepted', reviewed_at = CURRENT_TIMESTAMP, reviewed_by = ? WHERE id = ?''', (reviewer_id, application_id))
     
     conn.commit()
     conn.close()
@@ -543,7 +572,7 @@ def get_guild_applications_count(guild_id):
     # guild.py - добавить функцию
 
 def get_guild_members_with_activity(guild_id):
-    """Получение участников гильдии с активностью"""
+    """Получение участников гильдии с активностью (общий и еженедельный опыт)"""
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     cur.execute('''
@@ -553,12 +582,13 @@ def get_guild_members_with_activity(guild_id):
             c.level, 
             gm.rank,
             c.guild_exp_contributed,
+            c.guild_exp_weekly,
             u.last_activity
         FROM guild_members gm
         JOIN characters c ON gm.character_id = c.id
         JOIN users u ON c.vk_id = u.vk_id
         WHERE gm.guild_id = ?
-        ORDER BY gm.rank DESC, c.guild_exp_contributed DESC
+        ORDER BY gm.rank DESC, c.guild_exp_weekly DESC
     ''', (guild_id,))
     rows = cur.fetchall()
     conn.close()
@@ -567,7 +597,7 @@ def get_guild_members_with_activity(guild_id):
     from datetime import datetime
     
     for row in rows:
-        last_activity = row[5]
+        last_activity = row[6]
         
         if last_activity:
             try:
@@ -596,7 +626,84 @@ def get_guild_members_with_activity(guild_id):
             'name': row[1],
             'level': row[2],
             'rank': row[3],
-            'guild_exp': row[4] or 0,
+            'guild_exp': row[4] or 0,      # Общий вклад
+            'guild_exp_weekly': row[5] or 0,  # Еженедельный вклад
             'last_activity': time_str
         })
     return members
+
+def disband_guild(guild_id):
+    """Расформирование гильдии"""
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    
+    # Проверяем, существует ли гильдия
+    cur.execute('SELECT id, name FROM guilds WHERE id = ?', (guild_id,))
+    guild = cur.fetchone()
+    if not guild:
+        conn.close()
+        return False, "Гильдия не найдена."
+    
+    guild_name = guild[1]
+    
+    # Удаляем всех участников
+    cur.execute('DELETE FROM guild_members WHERE guild_id = ?', (guild_id,))
+    
+    # Удаляем склад
+    cur.execute('DELETE FROM guild_storage WHERE guild_id = ?', (guild_id,))
+    
+    # Удаляем заявки
+    cur.execute('DELETE FROM guild_applications WHERE guild_id = ?', (guild_id,))
+    
+    # Удаляем ежедневные квесты
+    cur.execute('DELETE FROM guild_quests_daily WHERE guild_id = ?', (guild_id,))
+    
+    # Удаляем саму гильдию
+    cur.execute('DELETE FROM guilds WHERE id = ?', (guild_id,))
+    
+    conn.commit()
+    conn.close()
+    
+    return True, f"Гильдия «{guild_name}» расформирована."
+def reset_guild_weekly_exp():
+    """Сброс еженедельного опыта гильдии (вызывается раз в неделю)"""
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    
+    # Сбрасываем еженедельный вклад у всех игроков
+    cur.execute('UPDATE characters SET guild_exp_weekly = 0, guild_exp_updated_at = CURRENT_TIMESTAMP')
+    
+    # Сбрасываем еженедельный опыт гильдии
+    cur.execute('UPDATE guilds SET weekly_exp = 0')
+    
+    conn.commit()
+    conn.close()
+    print("🔄 Еженедельный опыт гильдии сброшен!")
+    return True
+
+
+def add_guild_exp_weekly(character_id, exp):
+    """Добавление еженедельного опыта гильдии"""
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    
+    # Проверяем, нужно ли сбросить (если прошла неделя)
+    cur.execute('SELECT guild_exp_updated_at FROM characters WHERE id = ?', (character_id,))
+    row = cur.fetchone()
+    
+    if row and row[0]:
+        try:
+            updated_at = datetime.fromisoformat(row[0])
+            if datetime.now() - updated_at > timedelta(days=7):
+                # Прошла неделя — сбрасываем
+                cur.execute('UPDATE characters SET guild_exp_weekly = 0 WHERE id = ?', (character_id,))
+        except:
+            pass
+    
+    # Добавляем опыт
+    cur.execute('UPDATE characters SET guild_exp_weekly = guild_exp_weekly + ? WHERE id = ?', (exp, character_id))
+    cur.execute('UPDATE characters SET guild_exp_updated_at = CURRENT_TIMESTAMP WHERE id = ?', (character_id,))
+    
+    conn.commit()
+    conn.close()
+    return True

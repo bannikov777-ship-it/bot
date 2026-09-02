@@ -51,6 +51,7 @@ from guild_quests import check_pending_guild_quests_on_startup, periodic_quest_c
 from admin import admin_codes_menu, admin_create_code, admin_show_codes, is_admin
 from permanent_promo import init_default_promo
 from core.user import update_activity
+from vk_api.keyboard import VkKeyboard, VkKeyboardColor
 
 
 logging.basicConfig(level=logging.INFO)
@@ -234,6 +235,7 @@ async def message_handler(message: Message):
                 'awaiting_guild_manage_id',
                 'awaiting_auction_price',
                 'awaiting_auction_buy_id',
+                'awaiting_auction2_price',
                 'awaiting_mail_recipient',
                 'awaiting_mail_subject',
                 'awaiting_mail_body',
@@ -319,15 +321,25 @@ async def message_handler(message: Message):
                 if not char:
                     await send_message(bot.api, user_id, '❌ Сначала создайте персонажа.', get_back_keyboard('город'))
                     return
+                
+                user_data = await get_user_async(user_id)
+                parent_state = user_data['context'].get('parent_state', 'город')
+                
                 guild_id, msg = await asyncio.to_thread(create_guild, char['id'], name)
+                
                 if guild_id:
-                    await send_message(bot.api, user_id, f'✅ {msg}', get_back_keyboard('гильдию'))
-                    await show_guild(bot.api, user_id)
+                    # ✅ ТОЛЬКО ОДНО СООБЩЕНИЕ О СОЗДАНИИ
+                    await send_message(bot.api, user_id, f'✅ {msg}')
+                    # ✅ СРАЗУ ПОКАЗЫВАЕМ ГИЛЬДИЮ (без лишних сообщений)
+                    from locations.guild import show_guild
+                    await show_guild(bot.api, user_id, 'город2')
                 else:
-                    await send_message(bot.api, user_id, f'❌ {msg}', get_back_keyboard('гильдию'))
-                await update_user_async(user_id, state='city', context={})
+                    keyboard = VkKeyboard()
+                    keyboard.add_button('🏙️ В Озерный Край', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_city2'})
+                    await send_message(bot.api, user_id, f'❌ {msg}', keyboard)
+                    await update_user_async(user_id, state='city2', context={})
                 return
-
+            
             # ---- ПОПОЛНЕНИЕ КАЗНЫ ГИЛЬДИИ ----
             if state == 'awaiting_guild_donate':
                 try:
@@ -415,10 +427,24 @@ async def message_handler(message: Message):
             if state == 'awaiting_guild_apply':
                 try:
                     guild_id = int(text.strip())
+                    print(f"🔍 Ввод ID гильдии: {guild_id}")  # ОТЛАДКА
+                    
+                    if guild_id <= 0:
+                        await send_message(bot.api, user_id, '❌ ID должен быть положительным числом.', get_back_keyboard('город2'))
+                        return
+                    
+                    # Проверяем существование гильдии ДО вызова confirm
+                    from guild import get_guild
+                    guild = await asyncio.to_thread(get_guild, guild_id)
+                    if not guild:
+                        await send_message(bot.api, user_id, f'❌ Гильдия с ID {guild_id} не найдена.\n\nПроверьте ID в списке гильдий.', get_back_keyboard('город2'))
+                        return
+                    
                     from locations.guild import show_guild_apply_confirm
                     await show_guild_apply_confirm(bot.api, user_id, guild_id)
+                    
                 except ValueError:
-                    await send_message(bot.api, user_id, '❌ Введите число (ID гильдии).', get_back_keyboard('гильдию'))
+                    await send_message(bot.api, user_id, '❌ Введите число (ID гильдии).\n\nПосмотрите ID в списке гильдий.', get_back_keyboard('город2'))
                 return
 
             # ---- ПРИНЯТИЕ ЗАЯВКИ ПО ID ----
@@ -608,6 +634,19 @@ async def message_handler(message: Message):
                     await show_mail_send_with_attachment(bot.api, user_id, context.get('mail_body', ''))
                 except ValueError:
                     await send_message(bot.api, user_id, '❌ Введите целое число.', get_mail_attachment_keyboard())
+                return
+
+                        # ---- АУКЦИОН 2 - ВВОД ЦЕНЫ ----
+            if state == 'awaiting_auction2_price':
+                try:
+                    price = int(text.strip())
+                    if price <= 0:
+                        await send_message(bot.api, user_id, '❌ Цена должна быть положительным числом.', get_back_keyboard('аукцион2'))
+                        return
+                    from locations.auction2 import show_auction2_sell_execute
+                    await show_auction2_sell_execute(bot.api, user_id, price)
+                except ValueError:
+                    await send_message(bot.api, user_id, '❌ Введите целое число (например, 100).', get_back_keyboard('аукцион2'))
                 return
 
             # ---- ВВОД ПРОМОКОДА ----

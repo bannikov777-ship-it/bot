@@ -4,9 +4,15 @@ from vk_api.keyboard import VkKeyboard, VkKeyboardColor
 
 
 # ---- БАЗОВЫЕ КЛАВИАТУРЫ ----
-def get_back_keyboard(parent_name='город'):
+def get_back_keyboard(parent_name='лагерь'):
     keyboard = VkKeyboard()
-    keyboard.add_button(f'🏙️ В {parent_name}', color=VkKeyboardColor.SECONDARY, payload={'cmd': f'go_{parent_name}'})
+    
+    # Если parent_name == 'гильдию' или 'guild' — возвращаем в Озерный Край
+    if parent_name in ['гильдию', 'guild']:
+        keyboard.add_button('🏙️ В Озерный Край', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_city2'})
+    else:
+        keyboard.add_button(f'🏕️ В {parent_name}', color=VkKeyboardColor.SECONDARY, payload={'cmd': f'go_{parent_name}'})
+    
     return keyboard
 
 
@@ -33,13 +39,19 @@ def get_class_choice_keyboard():
 
 
 # ---- ПРОФИЛЬ И ИНВЕНТАРЬ ----
-def get_profile_keyboard():
+def get_profile_keyboard(parent='город'):
     keyboard = VkKeyboard()
     keyboard.add_button('📬 Почта', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'mail'})
     keyboard.add_button('🎁 Промокод', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'code_enter'})
     keyboard.add_line()
     keyboard.add_button('🎒 Инвентарь', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'inventory'})
-    keyboard.add_button('🏙️ В город', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_city'})
+    
+    # ✅ Возврат в правильный город
+    if parent == 'город2':
+        keyboard.add_button('🏙️ В Озерный Край', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_city2'})
+    else:
+        keyboard.add_button('🏙️ В город', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_city'})
+    
     return keyboard
 
 
@@ -55,7 +67,6 @@ def get_city_keyboard():
     keyboard.add_button('🍺 Таверна', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'tavern'})
     keyboard.add_button('🏛 Ратуша', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'town_hall'})
     keyboard.add_line()
-    keyboard.add_button('🏰 Гильдия', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'guild'})
     keyboard.add_button('🏪 Рынок', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'market'})
     keyboard.add_line()
     keyboard.add_button('🏹 Гильдия охотников', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'hunters'})
@@ -63,14 +74,28 @@ def get_city_keyboard():
     keyboard.add_line()
     keyboard.add_button('💎 Премиум магазин', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'premium_shop'})
     keyboard.add_line()
-    keyboard.add_button('👤 Профиль', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'profile'})
+    keyboard.add_button('🏕️ Лагерь', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'go_camp'})  # ✅ НОВОЕ
     keyboard.add_button('🚪 Выход из города', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'exit_city'})
     return keyboard
 
+# ---- ГОРОД 2 ----
 
 def get_city2_keyboard():
     keyboard = VkKeyboard()
-    keyboard.add_button('🚪 Выйти из города', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'exit_city2'})
+    keyboard.add_button('🍺 Приозерная таверна', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'go_tavern2'})
+    keyboard.add_button('🏛 Ратуша', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'go_town_hall2'})
+    keyboard.add_line()
+    keyboard.add_button('🏰 Гильдия', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'guild'})
+    keyboard.add_button('🏪 Рынок', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'go_market2'})
+    keyboard.add_line()
+    keyboard.add_button('⚒️ Кузница', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'go_smithy2'})
+    keyboard.add_button('🏛 Аукцион', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'go_auction2'})
+    keyboard.add_line()
+    keyboard.add_button('🏹 Гильдия охотников', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'go_hunters2'})
+    keyboard.add_button('⛪ Храм Озера', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'go_church2'})
+    keyboard.add_line()
+    keyboard.add_button('🏕️ Лагерь', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'go_camp'})  # ✅ НОВОЕ
+    keyboard.add_button('🌉 Выйти на мост', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'exit_city2'})
     return keyboard
 
 
@@ -144,14 +169,19 @@ def get_sleep_status_keyboard():
 
 
 # ---- РАТУША ----
-def get_town_hall_keyboard(char):
+def get_town_hall_keyboard(char, parent='город'):
     keyboard = VkKeyboard()
     keyboard.add_button('🎯 Выбор класса', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'town_hall_class'})
     keyboard.add_button('🛠 Создать гильдию', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'guild_create'})
     keyboard.add_line()
     keyboard.add_button('📊 Рейтинг', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'rating'})
     keyboard.add_line()
-    keyboard.add_button('🏙️ В город', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_city'})
+    
+    if parent == 'город2':
+        keyboard.add_button('🏙️ В Озерный Край', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_city2'})
+    else:
+        keyboard.add_button('🏙️ В город', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_city'})
+    
     return keyboard
 
 
@@ -204,31 +234,31 @@ def get_church_keyboard(char):
     keyboard.add_button('🏙️ В город', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_city'})
     return keyboard
 
-
-# keyboards.py (фрагмент с добавленными функциями)
-
 # ---- ГИЛЬДИЯ ----
-def get_guild_keyboard(guild, my_rank):
+def get_guild_keyboard(guild, my_rank, parent='город'):
     keyboard = VkKeyboard()
     
-    # Строка 1 - 3 кнопки (максимум 4)
+    # Строка 1 - 2 кнопки
     keyboard.add_button('👥 Список участников', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'guild_members'})
     keyboard.add_button('📦 Склад', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'guild_storage'})
-    keyboard.add_button('📋 Заявки', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'guild_applications'})
     keyboard.add_line()
     
     # Строка 2 - 2 кнопки
+    keyboard.add_button('📋 Заявки', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'guild_applications'})
     keyboard.add_button('⚙️ Управление', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'guild_manage'})
-    keyboard.add_button('💬 Чат', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'guild_chat'})
     keyboard.add_line()
     
     # Строка 3 - 2 кнопки
+    keyboard.add_button('💬 Чат', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'guild_chat'})
     keyboard.add_button('📜 Квесты гильдии', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'guild_quests'})
-    keyboard.add_button('📌 Мой квест', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'guild_quest_status'})
     keyboard.add_line()
     
     # Строка 4 - 1 кнопка
-    keyboard.add_button('🏙️ В город', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_city'})
+    keyboard.add_button('📌 Мой квест', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'guild_quest_status'})
+    keyboard.add_line()
+    
+    # Строка 5 - 1 кнопка (возврат)
+    keyboard.add_button('🏙️ В Озерный Край', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_city2'})
     
     return keyboard
 
@@ -236,8 +266,9 @@ def get_guild_keyboard(guild, my_rank):
 def get_guild_menu_keyboard():
     keyboard = VkKeyboard()
     keyboard.add_button('📋 Список гильдий', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'guild_list'})
+    keyboard.add_button('🛠 Создать гильдию', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'guild_create'})
     keyboard.add_line()
-    keyboard.add_button('🏙️ В город', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_city'})
+    keyboard.add_button('🏙️ В Озерный Край', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_city2'})
     return keyboard
 
 
@@ -252,20 +283,26 @@ def get_guild_chat_keyboard():
 def get_guild_storage_keyboard(items):
     keyboard = VkKeyboard()
     
+    # Если есть предметы — показываем их по 2 в строке
     if items:
-        for item in items:
+        for i, item in enumerate(items):
             label = f"{item.get('icon', '📦')} {item.get('name', 'Предмет')} x{item.get('quantity', 1)}"
             keyboard.add_button(label, color=VkKeyboardColor.PRIMARY,
                                payload={'cmd': 'guild_storage_item', 'storage_id': item.get('id')})
+            if i % 2 == 1:
+                keyboard.add_line()
+        if len(items) % 2 != 0:
             keyboard.add_line()
     else:
         keyboard.add_button('📭 Склад пуст', color=VkKeyboardColor.SECONDARY)
         keyboard.add_line()
     
+    # Строка с действиями
     keyboard.add_button('➕ Добавить предмет', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'guild_storage_add'})
     keyboard.add_button('➖ Изъять предмет', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'guild_storage_remove_prompt'})
     keyboard.add_line()
     keyboard.add_button('🏰 В гильдию', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_guild'})
+    
     return keyboard
 
 

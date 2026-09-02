@@ -6,16 +6,27 @@ TOWN_HALL_IMAGE = 'photo-240828623_456239029'
 RATING_IMAGE = 'photo-240828623_456239333'
 
 async def show_town_hall(vk, user_id):
-    """Показ ратуши"""
+    """Показ ратуши (первый город)"""
     char = await get_character_async(user_id)
     if not char:
         await send_message(vk, user_id, 'Сначала создайте персонажа.', get_back_keyboard('город'))
         return
-    await send_message(vk, user_id, '🏛 Ратуша – центр управления городом. Что вас интересует?', 
-                      get_town_hall_keyboard(char), attachment=TOWN_HALL_IMAGE)
+    
     user_data = await get_user_async(user_id)
     context = user_data['context']
-    context['parent_state'] = 'city'
+    
+    # ✅ Определяем, откуда пришли
+    if context.get('parent_state') == 'city2':
+        parent = 'город2'
+    else:
+        parent = 'город'
+    
+    context['parent_state'] = parent
+    await update_user_async(user_id, context=context)
+    
+    # ✅ Передаём parent в get_town_hall_keyboard
+    await send_message(vk, user_id, '🏛 Ратуша – центр управления городом. Что вас интересует?', 
+                      get_town_hall_keyboard(char, parent), attachment=TOWN_HALL_IMAGE)
     await update_user_async(user_id, state='town_hall', context=context)
 
 async def show_rating(vk, user_id):

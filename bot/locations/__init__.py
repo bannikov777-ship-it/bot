@@ -45,3 +45,5 @@ from .codes import show_codes_menu, process_code_enter
 # Для обратной совместимости с battle.py
 from .forest import forest_deep, forest_wander, back_to_exit
 from .graveyard import graveyard_deep, graveyard_wander
+from .bridge import show_bridge
+from .shore import show_shore

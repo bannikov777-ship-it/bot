@@ -1,4 +1,5 @@
-# guild_quests.py (полный исправленный с ручной сдачей и проверкой)
+# guild_quests.py (полный исправленный)
+
 import sqlite3
 import json
 import asyncio
@@ -20,7 +21,6 @@ def get_daily_guild_quests(guild_id):
     
     today = datetime.datetime.now().strftime('%Y-%m-%d')
     
-    # Проверяем, есть ли уже квесты на сегодня
     cur.execute('SELECT quests FROM guild_quests_daily WHERE guild_id = ? AND date = ?', (guild_id, today))
     row = cur.fetchone()
     
@@ -29,11 +29,9 @@ def get_daily_guild_quests(guild_id):
         conn.close()
         return get_quests_by_ids(quest_ids)
     
-    # Генерируем новые квесты
     all_quests = get_all_quest_templates()
     random.shuffle(all_quests)
     
-    # Выбираем 3 квеста
     selected = all_quests[:3]
     quest_ids = [q['id'] for q in selected]
     
@@ -112,7 +110,6 @@ def get_available_guild_quests(player_id):
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     
-    # Получаем гильдию игрока
     cur.execute('SELECT guild_id FROM guild_members WHERE character_id = ?', (player_id,))
     guild_row = cur.fetchone()
     if not guild_row:
@@ -121,16 +118,13 @@ def get_available_guild_quests(player_id):
     
     guild_id = guild_row[0]
     
-    # Получаем ежедневные квесты гильдии
     daily_quests = get_daily_guild_quests(guild_id)
     daily_ids = [q['id'] for q in daily_quests]
     
-    # Получаем уже взятые игроком квесты
     cur.execute('SELECT quest_id FROM player_guild_quests WHERE player_id = ?', (player_id,))
     taken = [row[0] for row in cur.fetchall()]
     conn.close()
     
-    # Возвращаем только те, которые ещё не взяты
     available = [q for q in daily_quests if q['id'] not in taken]
     
     return available
@@ -159,6 +153,8 @@ def get_quest_by_id(quest_id):
         }
     return None
 
+
+# ========== ВЗЯТИЕ КВЕСТА ==========
 
 async def take_guild_quest(vk, user_id, quest_id):
     print(f"📌 take_guild_quest: user_id={user_id}, quest_id={quest_id}")
@@ -201,21 +197,27 @@ async def take_guild_quest(vk, user_id, quest_id):
     return True, f"✅ Квест '{quest['name']}' взят! Он будет выполнен через {quest['duration_minutes']} минут."
 
 
+# ========== ВЫПОЛНЕНИЕ КВЕСТА (АВТОМАТИЧЕСКОЕ) ==========
+
 async def complete_guild_quest(vk, user_id, quest_id):
-    print(f"🔥🔥🔥 complete_guild_quest ВЫЗВАНА для user_id={user_id}, quest_id={quest_id}")
+    """Автоматическое выполнение квеста (вызывается по таймеру)"""
+    print(f"🔥 complete_guild_quest ВЫЗВАНА для user_id={user_id}, quest_id={quest_id}")
     conn = None
     try:
         char = await get_character_async(user_id)
         if not char:
             print("❌ Персонаж не найден")
             return
+        
         conn = sqlite3.connect(DB_NAME)
         cur = conn.cursor()
-        cur.execute('SELECT id, completed, rewarded FROM player_guild_quests WHERE player_id = ? AND quest_id = ? AND completed = 0', (char['id'], quest_id))
+        cur.execute('SELECT id, completed, rewarded FROM player_guild_quests WHERE player_id = ? AND quest_id = ? AND completed = 0', 
+                    (char['id'], quest_id))
         row = cur.fetchone()
         if not row:
             print("❌ Квест не найден или уже выполнен")
             return
+        
         player_quest_id = row[0]
         if row[2] == 1:
             print("❌ Квест уже награждён")
@@ -227,18 +229,32 @@ async def complete_guild_quest(vk, user_id, quest_id):
             return
 
         cur.execute('UPDATE player_guild_quests SET completed = 1, rewarded = 1 WHERE id = ?', (player_quest_id,))
+        
+        # Награда игроку (полная)
         cur.execute('UPDATE characters SET exp = exp + ?, silver = silver + ? WHERE id = ?', 
                     (quest['exp_reward'], quest['silver_reward'], char['id']))
-        cur.execute('UPDATE characters SET guild_exp_contributed = guild_exp_contributed + ? WHERE id = ?', 
-                    (quest['exp_reward'], char['id']))
+        
+        # ✅ Опыт гильдии (1/100 от награды)
+        guild_exp = quest['exp_reward'] // 100
+        if guild_exp > 0:
+            cur.execute('UPDATE characters SET guild_exp_contributed = guild_exp_contributed + ? WHERE id = ?', 
+                        (guild_exp, char['id']))
+            cur.execute('UPDATE characters SET guild_exp_weekly = guild_exp_weekly + ? WHERE id = ?', 
+                        (guild_exp, char['id']))
         cur.execute('UPDATE characters SET guild_quests_completed = guild_quests_completed + 1 WHERE id = ?', 
                     (char['id'],))
-
-        conn.commit()
-
+        
+        # Добавляем опыт гильдии
         guild = get_guild_by_character(char['id'])
-        if guild:
-            add_guild_exp(guild['id'], quest['exp_reward'])
+        if guild and guild_exp > 0:
+            add_guild_exp(guild['id'], guild_exp)
+            # Обновляем еженедельный опыт гильдии
+            conn2 = sqlite3.connect(DB_NAME)
+            cur2 = conn2.cursor()
+            cur2.execute('UPDATE guilds SET weekly_exp = weekly_exp + ? WHERE id = ?', 
+                        (guild_exp, guild['id']))
+            conn2.commit()
+            conn2.close()
 
         extra_text = ""
         if quest['extra_reward_type']:
@@ -258,10 +274,12 @@ async def complete_guild_quest(vk, user_id, quest_id):
 
         await send_message(vk, user_id,
             f"✅ Квест '{quest['name']}' выполнен!\n"
-            f"Получено: {quest['exp_reward']} опыта, {quest['silver_reward']} серебра{extra_text}")
+            f"Получено: {quest['exp_reward']} опыта, {quest['silver_reward']} серебра{extra_text}\n"
+            f"🏰 Опыт гильдии: +{guild_exp}")
         print(f"✅ Квест {quest['name']} завершён для пользователя {user_id}")
+        
     except Exception as e:
-        print(f"❌❌❌ ОШИБКА в complete_guild_quest:")
+        print(f"❌ ОШИБКА в complete_guild_quest:")
         traceback.print_exc()
     finally:
         if conn:
@@ -271,12 +289,10 @@ async def complete_guild_quest(vk, user_id, quest_id):
                 pass
 
 
-# ========== НОВАЯ ФУНКЦИЯ: РУЧНАЯ СДАЧА КВЕСТА ==========
+# ========== РУЧНАЯ СДАЧА КВЕСТА ==========
 
 async def complete_guild_quest_manual(vk, user_id):
-    """
-    Ручная сдача квеста (если автоматическая не сработала)
-    """
+    """Ручная сдача квеста (если автоматическая не сработала)"""
     print(f"📌 Ручная сдача квеста для user_id={user_id}")
     char = await get_character_async(user_id)
     if not char:
@@ -285,10 +301,9 @@ async def complete_guild_quest_manual(vk, user_id):
     conn = None
     try:
         conn = sqlite3.connect(DB_NAME)
-        conn.execute('BEGIN IMMEDIATE')  # Блокируем БД
+        conn.execute('BEGIN IMMEDIATE')
         cur = conn.cursor()
         
-        # Ищем активный квест
         cur.execute('''
             SELECT pq.id, pq.quest_id, pq.end_time
             FROM player_guild_quests pq
@@ -302,20 +317,17 @@ async def complete_guild_quest_manual(vk, user_id):
         
         player_quest_id, quest_id, end_time = row
         
-        # Проверяем, истекло ли время
         from datetime import datetime
         end_time_dt = datetime.fromisoformat(end_time)
         now = datetime.now()
         
         if end_time_dt > now:
-            # Квест ещё не закончился
             remaining = end_time_dt - now
             minutes = int(remaining.total_seconds() // 60)
             seconds = int(remaining.total_seconds() % 60)
             conn.rollback()
             return False, f"⏳ Квест ещё выполняется! Осталось {minutes} мин {seconds} сек."
         
-        # Завершаем квест принудительно
         quest = get_quest_by_id(quest_id)
         if not quest:
             conn.rollback()
@@ -323,21 +335,30 @@ async def complete_guild_quest_manual(vk, user_id):
         
         cur.execute('UPDATE player_guild_quests SET completed = 1, rewarded = 1 WHERE id = ?', (player_quest_id,))
         
+        # Награда игроку (полная)
         cur.execute('UPDATE characters SET exp = exp + ?, silver = silver + ? WHERE id = ?', 
                     (quest['exp_reward'], quest['silver_reward'], char['id']))
-        cur.execute('UPDATE characters SET guild_exp_contributed = guild_exp_contributed + ? WHERE id = ?', 
-                    (quest['exp_reward'], char['id']))
+        
+        # ✅ Опыт гильдии (1/100 от награды)
+        guild_exp = quest['exp_reward'] // 100
+        if guild_exp > 0:
+            cur.execute('UPDATE characters SET guild_exp_contributed = guild_exp_contributed + ? WHERE id = ?', 
+                        (guild_exp, char['id']))
+            cur.execute('UPDATE characters SET guild_exp_weekly = guild_exp_weekly + ? WHERE id = ?', 
+                        (guild_exp, char['id']))
         cur.execute('UPDATE characters SET guild_quests_completed = guild_quests_completed + 1 WHERE id = ?', 
                     (char['id'],))
         
-        # Обновляем опыт гильдии
+        # Добавляем опыт гильдии
         guild = get_guild_by_character(char['id'])
-        if guild:
-            try:
-                add_guild_exp(guild['id'], quest['exp_reward'])
-            except Exception as e:
-                print(f"⚠️ Ошибка добавления опыта гильдии: {e}")
-                # Продолжаем, это не критично для награды игрока
+        if guild and guild_exp > 0:
+            add_guild_exp(guild['id'], guild_exp)
+            conn2 = sqlite3.connect(DB_NAME)
+            cur2 = conn2.cursor()
+            cur2.execute('UPDATE guilds SET weekly_exp = weekly_exp + ? WHERE id = ?', 
+                        (guild_exp, guild['id']))
+            conn2.commit()
+            conn2.close()
         
         extra_text = ""
         if quest['extra_reward_type']:
@@ -361,7 +382,6 @@ async def complete_guild_quest_manual(vk, user_id):
         if conn:
             conn.close()
     
-    # Удаляем задачу из планировщика если есть
     try:
         user_data = await get_user_async(user_id)
         context = user_data['context']
@@ -372,23 +392,20 @@ async def complete_guild_quest_manual(vk, user_id):
     except Exception as e:
         print(f"⚠️ Ошибка очистки задачи: {e}")
     
-    return True, f"✅ Квест '{quest['name']}' выполнен!\nПолучено: {quest['exp_reward']} опыта, {quest['silver_reward']} серебра{extra_text}"
+    return True, f"✅ Квест '{quest['name']}' выполнен!\nПолучено: {quest['exp_reward']} опыта, {quest['silver_reward']} серебра{extra_text}\n🏰 Опыт гильдии: +{guild_exp}"
 
 
-# ========== НОВАЯ ФУНКЦИЯ: ПРОВЕРКА ЗАВИСШИХ КВЕСТОВ ==========
+# ========== ПРОВЕРКА ЗАВИСШИХ КВЕСТОВ ==========
 
 async def check_pending_guild_quests_on_startup(vk):
-    """
-    Проверка всех зависших квестов при запуске бота
-    """
+    """Проверка всех зависших квестов при запуске бота"""
     print("🔍 Проверка зависших гильдейских квестов...")
     conn = None
     try:
         conn = sqlite3.connect(DB_NAME)
-        conn.execute('BEGIN IMMEDIATE')  # Блокируем БД
+        conn.execute('BEGIN IMMEDIATE')
         cur = conn.cursor()
         
-        # Находим все активные квесты с истекшим временем
         cur.execute('''
             SELECT pq.id, pq.player_id, pq.quest_id, pq.end_time
             FROM player_guild_quests pq
@@ -406,7 +423,6 @@ async def check_pending_guild_quests_on_startup(vk):
         completed_count = 0
         for pq_id, player_id, quest_id, end_time in pending:
             try:
-                # Получаем данные персонажа
                 char = get_character_by_id(player_id)
                 if not char:
                     print(f"❌ Персонаж {player_id} не найден")
@@ -421,18 +437,22 @@ async def check_pending_guild_quests_on_startup(vk):
                 
                 cur.execute('UPDATE characters SET exp = exp + ?, silver = silver + ? WHERE id = ?', 
                             (quest['exp_reward'], quest['silver_reward'], char['id']))
-                cur.execute('UPDATE characters SET guild_exp_contributed = guild_exp_contributed + ? WHERE id = ?', 
-                            (quest['exp_reward'], char['id']))
+                
+                guild_exp = quest['exp_reward'] // 100
+                if guild_exp > 0:
+                    cur.execute('UPDATE characters SET guild_exp_contributed = guild_exp_contributed + ? WHERE id = ?', 
+                                (guild_exp, char['id']))
+                    cur.execute('UPDATE characters SET guild_exp_weekly = guild_exp_weekly + ? WHERE id = ?', 
+                                (guild_exp, char['id']))
                 cur.execute('UPDATE characters SET guild_quests_completed = guild_quests_completed + 1 WHERE id = ?', 
                             (char['id'],))
                 
-                # Обновляем опыт гильдии
                 guild = get_guild_by_character(char['id'])
-                if guild:
-                    try:
-                        add_guild_exp(guild['id'], quest['exp_reward'])
-                    except Exception as e:
-                        print(f"⚠️ Ошибка добавления опыта гильдии: {e}")
+                if guild and guild_exp > 0:
+                    add_guild_exp(guild['id'], guild_exp)
+                    cur2 = conn.cursor()
+                    cur2.execute('UPDATE guilds SET weekly_exp = weekly_exp + ? WHERE id = ?', 
+                                (guild_exp, guild['id']))
                 
                 extra_text = ""
                 if quest['extra_reward_type']:
@@ -443,12 +463,12 @@ async def check_pending_guild_quests_on_startup(vk):
                     except Exception as e:
                         print(f"⚠️ Ошибка выдачи доп. награды: {e}")
                 
-                # Отправляем уведомление игроку
                 if vk:
                     try:
                         await send_message(vk, char['vk_id'], 
                             f"✅ Квест '{quest['name']}' автоматически завершён!\n"
-                            f"Получено: {quest['exp_reward']} опыта, {quest['silver_reward']} серебра{extra_text}")
+                            f"Получено: {quest['exp_reward']} опыта, {quest['silver_reward']} серебра{extra_text}\n"
+                            f"🏰 Опыт гильдии: +{guild_exp}")
                     except Exception as e:
                         print(f"⚠️ Не удалось отправить уведомление игроку {char['name']}: {e}")
                 
@@ -457,7 +477,6 @@ async def check_pending_guild_quests_on_startup(vk):
                 
             except Exception as e:
                 print(f"❌ Ошибка при завершении квеста #{pq_id}: {e}")
-                import traceback
                 traceback.print_exc()
                 continue
         
@@ -468,29 +487,27 @@ async def check_pending_guild_quests_on_startup(vk):
         if conn:
             conn.rollback()
         print(f"❌ Ошибка проверки квестов: {e}")
-        import traceback
         traceback.print_exc()
     finally:
         if conn:
             conn.close()
 
 
-# ========== ПЕРИОДИЧЕСКАЯ ПРОВЕРКА (ЗАПУСКАЕТСЯ В main.py) ==========
+# ========== ПЕРИОДИЧЕСКАЯ ПРОВЕРКА ==========
 
 async def periodic_quest_check(vk):
-    """
-    Периодическая проверка зависших квестов (каждые 5 минут)
-    """
+    """Периодическая проверка зависших квестов (каждые 5 минут)"""
     print("🔄 Запущена периодическая проверка квестов (каждые 5 минут)")
     while True:
-        await asyncio.sleep(300)  # 5 минут
+        await asyncio.sleep(300)
         try:
             await check_pending_guild_quests_on_startup(vk)
         except Exception as e:
             print(f"❌ Ошибка периодической проверки квестов: {e}")
-            import traceback
             traceback.print_exc()
 
+
+# ========== ДОПОЛНИТЕЛЬНАЯ НАГРАДА ==========
 
 async def give_extra_reward(conn, cur, player_id, quest):
     reward_type = quest['extra_reward_type']
@@ -531,6 +548,8 @@ async def give_extra_reward(conn, cur, player_id, quest):
         return ""
 
 
+# ========== ОТМЕНА КВЕСТА ==========
+
 async def cancel_guild_quest(vk, user_id):
     char = await get_character_async(user_id)
     if not char:
@@ -558,6 +577,8 @@ async def cancel_guild_quest(vk, user_id):
 
     return True, "❌ Квест отменён."
 
+
+# ========== ПОЛУЧЕНИЕ АКТИВНОГО КВЕСТА ==========
 
 async def get_active_guild_quest(user_id):
     char = await get_character_async(user_id)
@@ -589,24 +610,3 @@ async def get_active_guild_quest(user_id):
             'end_time': row[11]
         }
     return None
-
-
-async def refresh_guild_quests(vk, user_id):
-    """Принудительное обновление квестов гильдии (для теста)"""
-    char = await get_character_async(user_id)
-    if not char:
-        await send_message(vk, user_id, '❌ Сначала создайте персонажа.')
-        return
-    
-    guild = get_guild_by_character(char['id'])
-    if not guild:
-        await send_message(vk, user_id, '❌ Вы не состоите в гильдии.')
-        return
-    
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
-    cur.execute('DELETE FROM guild_quests_daily WHERE guild_id = ?', (guild['id'],))
-    conn.commit()
-    conn.close()
-    
-    await send_message(vk, user_id, '🔄 Квесты гильдии обновлены!')

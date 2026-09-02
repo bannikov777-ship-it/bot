@@ -129,3 +129,15 @@ async def admin_codes_menu(vk, user_id):
         '🎁 Код для новичков:\n'
         '• OpenGame → 100 💎 кристаллов + 2000 💰 серебра',
         keyboard)
+
+    # admin.py - добавить команду
+
+async def admin_reset_guild_weekly(vk, user_id):
+    """Административная команда для сброса еженедельного опыта гильдии"""
+    if not await is_admin(user_id):
+        await send_message(vk, user_id, '❌ Доступ запрещён. Только для администраторов.')
+        return
+    
+    reset_guild_weekly_exp()
+    
+    await send_message(vk, user_id, '🔄 Еженедельный опыт гильдии сброшен!')

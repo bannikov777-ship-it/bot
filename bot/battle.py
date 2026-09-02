@@ -15,6 +15,7 @@ from quests import update_quest_progress
 from resources import drop_resource_for_monster, add_resource
 from keyboards import get_graveyard_after_battle_keyboard, get_back_keyboard, get_after_battle_keyboard
 from vip import get_vip, get_vip_bonus, VIP_NAMES, VIP_COLORS
+from core.battle_render import render_battle
 
 FOREST_IMAGE = 'photo-240828623_456239316'
 FOREST_DEEP_IMAGE = 'photo-240828623_456239315'
@@ -68,7 +69,39 @@ def get_after_battle_keyboard():
     keyboard.add_button('🚪 К выходу', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_exit'})
     return keyboard
 
+async def send_battle_status(vk, user_id):
+    """Отправка статуса боя (обёртка)"""
+    user_data = await get_user_async(user_id)
+    context = user_data['context']
+    battle = context.get('battle')
+    if not battle:
+        return
+    await send_battle_status_from_context(vk, user_id, context)
+
+
+async def send_battle_status_from_context(vk, user_id, context):
+    """Отправка статуса боя с новой визуализацией"""
+    battle = context.get('battle')
+    if not battle:
+        return
+    
+    char = await get_character_async(user_id)
+    player_name = char['name'] if char else 'Вы'
+    
+    battle['player_name'] = player_name
+    battle['player_class'] = char.get('class', '') if char else ''
+    battle['show_mana'] = char.get('class') == 'Послушник' if char else False
+    
+    text = render_battle(battle, player_name)
+    
+    monster = battle['monster']
+    keyboard = get_battle_keyboard(battle['player_class'])
+    
+    await send_message(vk, user_id, text, keyboard, attachment=monster.get('image'))
+
+
 async def start_battle(vk, user_id, zone, depth=0):
+    """Начало боя"""
     print(f"⚔️ start_battle вызван: user_id={user_id}, zone={zone}, depth={depth}")
     char = await get_character_async(user_id)
     if not char:
@@ -92,7 +125,7 @@ async def start_battle(vk, user_id, zone, depth=0):
         'crit_chance': char['crit_chance'],
         'dodge_chance': char['dodge_chance'],
         'round': 0,
-        'parry_charges': 4,  # 4 заряда = готово
+        'parry_charges': 4,
         'counter_available': True,
         'shield': False,
         'shield_active': False,
@@ -110,57 +143,24 @@ async def start_battle(vk, user_id, zone, depth=0):
     await update_user_async(user_id, state='battle', context=context)
     await send_battle_status(vk, user_id)
 
-async def send_battle_status(vk, user_id):
-    user_data = await get_user_async(user_id)
-    context = user_data['context']
-    battle = context.get('battle')
-    if not battle:
-        return
-    await send_battle_status_from_context(vk, user_id, context)
-
 async def send_battle_status_from_context(vk, user_id, context):
     battle = context.get('battle')
     if not battle:
         return
+    
+    char = await get_character_async(user_id)
+    player_name = char['name'] if char else 'Вы'
+    
+    battle['player_name'] = player_name
+    battle['player_class'] = char.get('class', '') if char else ''
+    battle['show_mana'] = char.get('class') == 'Послушник' if char else False
+    
+    text = render_battle(battle, player_name)
+    
     monster = battle['monster']
-    log_text = "\n".join(battle['log'][-5:])
-    if not log_text:
-        log_text = "⚔️ Бой начинается!"
+    keyboard = get_battle_keyboard(battle['player_class'])
     
-    # ПАРИРОВАНИЕ - новая логика с зарядами
-    parry_charges = battle.get('parry_charges', 4)
-    
-    if parry_charges >= 4:
-        parry_status = "✅ Готово"
-    else:
-        bar = "█" * parry_charges + "□" * (4 - parry_charges)
-        parry_status = f"🔄 {bar} ({parry_charges}/4)"
-    
-    shield_status = "❌ Нет"
-    if battle.get('shield_active'):
-        duration = battle.get('shield_duration', 0)
-        shield_status = f"🛡 Активна ({duration} ход.)" if duration > 0 else "🛡 Активна (последний ход!)"
-    
-    status = (
-        f"⚔️ {monster['name']}\n"
-        f"❤️ HP монстра: {monster['hp']}/{monster['max_hp']}\n"
-        f"⚔️ Атака монстра: {monster['attack']}\n"
-        f"📖 {monster.get('description', '')}\n\n"
-        f"🧑 Вы:\n"
-        f"❤️ HP: {battle['player_hp']}/{battle['player_max_hp']}\n"
-        f"💧 Мана: {battle['player_mana']}/{battle['player_max_mana']}\n"
-        f"⚡ Выносливость: {battle['player_stamina']}/{battle['player_max_stamina']}\n"
-        f"⚔️ Атака: {battle['player_attack']}\n"
-        f"🛡 Защита: {battle['player_defense']} {shield_status}\n"
-        f"🌀 Парирование: {parry_status}\n\n"
-        f"📜 Лог:\n{log_text}"
-    )
-    try:
-        keyboard = get_battle_keyboard(battle['player_class'])
-        await send_message(vk, user_id, status, keyboard, attachment=monster.get('image'))
-    except Exception as e:
-        print(f"DEBUG: Ошибка при отправке статуса: {e}")
-        await send_message(vk, user_id, status, None, attachment=monster.get('image'))
+    await send_message(vk, user_id, text, keyboard, attachment=monster.get('image'))
 
 async def show_battle_potions(vk, user_id):
     """Показ зелий для использования в бою (только HP, MP, Stamina)"""
@@ -609,6 +609,26 @@ async def end_battle(vk, user_id, won, fled=False):
             guild = await asyncio.to_thread(get_guild_by_character, char['id'])
             if guild:
                 guild_exp = max(1, exp_gain // 10)
+                
+                # Обновляем общий вклад игрока
+                cur.execute('UPDATE characters SET guild_exp_contributed = guild_exp_contributed + ? WHERE id = ?', 
+                            (guild_exp, char['id']))
+                
+                # ✅ Обновляем еженедельный вклад игрока
+                cur.execute('UPDATE characters SET guild_exp_weekly = guild_exp_weekly + ? WHERE id = ?', 
+                            (guild_exp, char['id']))
+                cur.execute('UPDATE characters SET guild_exp_updated_at = CURRENT_TIMESTAMP WHERE id = ?', 
+                            (char['id'],))
+                
+                # Обновляем еженедельный опыт гильдии
+                cur.execute('UPDATE guilds SET weekly_exp = weekly_exp + ? WHERE id = ?', 
+                            (guild_exp, guild['id']))
+                
+                # Обновляем опыт гильдии (уровень)
+                try:
+                    new_level = add_guild_exp(guild['id'], guild_exp)
+                except Exception as e:
+                    print(f"⚠️ Ошибка добавления опыта гильдии: {e}")
             
                 guild = await asyncio.to_thread(get_guild_by_character, char['id'])
                 if guild:

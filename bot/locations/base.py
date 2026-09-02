@@ -182,6 +182,7 @@ async def navigate_to(vk, user_id, target_state):
     from locations.forest import show_forest
     from locations.graveyard import show_graveyard
     from locations.meadow import show_meadow
+    from locations.bridge import show_bridge
     from locations.tower import show_tower
     from locations.tavern import show_tavern
     from locations.town_hall import show_town_hall
@@ -204,6 +205,8 @@ async def navigate_to(vk, user_id, target_state):
         await show_city(vk, user_id)
     elif target_state == 'city2':
         await show_city2(vk, user_id)
+    elif target_state == 'bridge':
+        await show_bridge(vk, user_id)
     elif target_state == 'exit':
         await show_exit(vk, user_id)
     elif target_state == 'forest':

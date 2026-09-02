@@ -13,13 +13,12 @@ MEADOW_HERBS_IMAGE = 'photo-240828623_456239320'
 gathering_state = {}
 
 def get_meadow_keyboard():
-    """Клавиатура луга"""
     keyboard = VkKeyboard()
     keyboard.add_button('🌿 Собрать травы', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'meadow_herbs'})
     keyboard.add_button('🗼 Путь к башне', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'meadow_tower'})
     keyboard.add_line()
     keyboard.add_button('🚪 К воротам', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_exit'})
-    keyboard.add_button('🏙️ Озерный край', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'meadow_city'})
+    keyboard.add_button('🌉 К мосту', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'go_bridge'})
     return keyboard
 
 async def show_meadow(vk, user_id):

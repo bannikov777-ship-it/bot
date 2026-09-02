@@ -51,21 +51,29 @@ def get_item_detail_text(item):
 
 
 async def show_inventory(vk, user_id):
-    """Показ инвентаря с детальным отображением и ID"""
     char = await get_character_async(user_id)
     if not char:
         await send_message(vk, user_id, 'Сначала создайте персонажа.', get_back_keyboard('город'))
         return
     
-    # Получаем данные
+    # ✅ Сохраняем parent_state (город, из которого пришли)
+    user_data = await get_user_async(user_id)
+    context = user_data['context']
+    parent = context.get('parent_state', 'city')
+    
+    # Если пришли из второго города — сохраняем
+    if user_data['state'] == 'city2':
+        parent = 'city2'
+    
+    context['parent_state'] = parent
+    await update_user_async(user_id, context=context)
+    
     inv_items = get_inventory(char['id'])
     equipment = get_equipment(char['id'])
     consumables = get_player_consumables(char['id'])
     
-    # Формируем текст
     text = "🎒 Инвентарь\n\n"
     
-    # Экипировка с ID в начале
     text += "🛡️ Экипировка (введите ID для снятия):\n"
     slots = {
         'head': ('🎩', 'Голова'),
@@ -75,7 +83,6 @@ async def show_inventory(vk, user_id):
         'boots': ('👢', 'Сапоги')
     }
     
-    # Проверяем, открыта ли левая рука
     show_left = char.get('class') and char.get('level', 0) >= 20
     
     for slot_key, (icon, slot_name) in slots.items():
@@ -98,7 +105,6 @@ async def show_inventory(vk, user_id):
     if not show_left:
         text += "\n🛡️ Левая рука откроется после выбора класса (20 уровень)\n"
     
-    # Предметы в сумке с ID в начале
     text += "\n🎒 Предметы в сумке (введите ID для экипировки):\n"
     if inv_items:
         for item in inv_items:
@@ -115,10 +121,8 @@ async def show_inventory(vk, user_id):
     else:
         text += "  Нет предметов\n"
     
-    # Расходники
     text += "\n🧪 Расходники:\n"
     if consumables:
-        # Отделяем свитки от остальных расходников
         scrolls = []
         other_consumables = []
         for c in consumables:
@@ -132,11 +136,9 @@ async def show_inventory(vk, user_id):
             else:
                 other_consumables.append(c)
         
-        # Показываем обычные расходники
         for c in other_consumables:
             text += f"  {c['icon']} {c['name']} (x{c['quantity']})\n"
         
-        # Показываем свитки отдельно
         if scrolls:
             text += "\n  📜 Свитки:\n"
             for c in scrolls:
@@ -144,7 +146,6 @@ async def show_inventory(vk, user_id):
     else:
         text += "  Нет расходников\n"
     
-    # ✅ ТРАВЫ
     herbs = get_player_herbs(char['id'])
     text += "\n🌿 Травы:\n"
     if herbs:
@@ -153,7 +154,6 @@ async def show_inventory(vk, user_id):
     else:
         text += "  Нет трав\n"
     
-    # ✅ РЕСУРСЫ (ТРОФЕИ)
     resources = get_player_resources(char['id'])
     text += "\n🎁 Ресурсы (трофеи):\n"
     if resources:
@@ -162,17 +162,15 @@ async def show_inventory(vk, user_id):
     else:
         text += "  Нет ресурсов\n"
     
-    # Клавиатура
     keyboard = VkKeyboard()
     keyboard.add_button('📥 Экипировать по ID', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'inventory_equip_prompt'})
     keyboard.add_button('📤 Снять по ID', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'inventory_unequip_prompt'})
     keyboard.add_line()
-    keyboard.add_button('📜 Свитки', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'scrolls'})
-    keyboard.add_line()
-    keyboard.add_button('👤 В профиль', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_profile'})
+    # ❌ УБИРАЕМ КНОПКУ "📜 Свитки"
+    # ❌ УБИРАЕМ КНОПКУ "👤 В профиль"
+    keyboard.add_button('🏕️ В лагерь', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_camp'})
     
-    await send_message(vk, user_id, text, keyboard)
-    await update_user_async(user_id, state='inventory', context={'parent_state': 'profile'})
+    await send_message(vk, user_id, text, keyboard) 
 
 
 async def show_inventory_equip_prompt(vk, user_id):
