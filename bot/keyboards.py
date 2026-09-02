@@ -35,6 +35,8 @@ def get_class_choice_keyboard():
     keyboard.add_button('🏹 Охотник', color=VkKeyboardColor.PRIMARY, payload={'class': 'Охотник'})
     keyboard.add_line()
     keyboard.add_button('✨ Послушник', color=VkKeyboardColor.PRIMARY, payload={'class': 'Послушник'})
+    keyboard.add_line()
+    keyboard.add_button('🔙 Назад', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'town_hall2'})  # ✅ Возврат в ратушу
     return keyboard
 
 
@@ -83,7 +85,7 @@ def get_city_keyboard():
 def get_city2_keyboard():
     keyboard = VkKeyboard()
     keyboard.add_button('🍺 Приозерная таверна', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'go_tavern2'})
-    keyboard.add_button('🏛 Ратуша', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'go_town_hall2'})
+    keyboard.add_button('🏛 Ратуша', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'town_hall'})  # ✅ town_hall
     keyboard.add_line()
     keyboard.add_button('🏰 Гильдия', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'guild'})
     keyboard.add_button('🏪 Рынок', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'go_market2'})
@@ -94,7 +96,7 @@ def get_city2_keyboard():
     keyboard.add_button('🏹 Гильдия охотников', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'go_hunters2'})
     keyboard.add_button('⛪ Храм Озера', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'go_church2'})
     keyboard.add_line()
-    keyboard.add_button('🏕️ Лагерь', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'go_camp'})  # ✅ НОВОЕ
+    keyboard.add_button('🏕️ Лагерь', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'go_camp'})
     keyboard.add_button('🌉 Выйти на мост', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'exit_city2'})
     return keyboard
 
@@ -171,9 +173,8 @@ def get_sleep_status_keyboard():
 # ---- РАТУША ----
 def get_town_hall_keyboard(char, parent='город'):
     keyboard = VkKeyboard()
-    keyboard.add_button('🎯 Выбор класса', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'town_hall_class'})
-    keyboard.add_button('🛠 Создать гильдию', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'guild_create'})
-    keyboard.add_line()
+    # ❌ УБРАНЫ КНОПКИ "Выбор класса" и "Создать гильдию"
+    # ✅ ТОЛЬКО РЕЙТИНГ
     keyboard.add_button('📊 Рейтинг', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'rating'})
     keyboard.add_line()
     
