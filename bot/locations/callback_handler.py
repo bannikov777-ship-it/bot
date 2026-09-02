@@ -29,11 +29,12 @@ from locations.scrolls import show_scrolls, use_scroll
 from locations.premium import show_premium_shop, show_premium_buy_prompt, show_premium_buy_confirm, show_premium_buy_execute
 from locations.codes import show_codes_menu, process_code_enter
 
-
+# ✅ ИМПОРТЫ ИЗ locations (БЕЗ show_town_hall2)
 from . import (
     show_city, show_city2, show_guild, show_market, show_healer,
     show_auction, show_smithy, show_church, show_market_shop,
-    show_hunters, show_tavern, show_town_hall, show_profile,
+    show_hunters, show_tavern, show_town_hall,
+    show_profile,
     show_inventory, show_exit, show_forest, show_graveyard,
     show_meadow, show_rating, show_guild_donate, show_guild_withdraw,
     show_guild_donate_confirm, show_guild_withdraw_confirm,
@@ -153,12 +154,46 @@ async def handle_callback(vk, user_id, payload):
         await show_city(vk, user_id)
         return
 
+    # ===== ОБРАБОТКА ВЫБОРА КЛАССА (из кнопок) =====
     if 'class' in payload:
         class_name = payload['class']
         char = await get_character_async(user_id)
         if not char:
             await send_message(vk, user_id, 'Сначала создайте персонажа.', get_back_keyboard('город'))
             return
+        
+        user_data = await get_user_async(user_id)
+        state = user_data['state']
+        
+        # Если это выбор класса во втором городе
+        if state == 'awaiting_class2':
+            if char['level'] < 20:
+                await send_message(vk, user_id, f'❌ Выбор класса доступен только с 20 уровня.', get_back_keyboard('город2'))
+                return
+            if char['class']:
+                await send_message(vk, user_id, f'Вы уже выбрали класс: {char["class"]}.', get_back_keyboard('город2'))
+                return
+            # ... дальше код
+        
+        # Если это смена класса во втором городе
+        if state == 'awaiting_change_class2':
+            if char['level'] < 20:
+                await send_message(vk, user_id, f'❌ Смена класса доступна только с 20 уровня.', get_back_keyboard('город2'))
+                return
+            if not char['class']:
+                await send_message(vk, user_id, '❌ Сначала выберите класс.', get_back_keyboard('город2'))
+                return
+            from locations.town_hall2 import process_change_class2
+            await process_change_class2(vk, user_id, class_name)
+            return
+        
+        # Если это смена класса во втором городе
+        if state == 'awaiting_change_class2':
+            from locations.town_hall2 import process_change_class2  # ✅ ПРЯМОЙ ИМПОРТ
+            await process_change_class2(vk, user_id, class_name)
+            return
+        
+        # Обычный выбор класса (в первом городе)
         if char['level'] < 20:
             await send_message(vk, user_id, f'❌ Выбор класс доступен только с 20 уровня. Ваш уровень: {char["level"]}.', get_back_keyboard('ратушу'))
             return
@@ -183,7 +218,6 @@ async def handle_callback(vk, user_id, payload):
     if await handle_tower_commands(vk, user_id, cmd, payload):
         return
 
-
     if cmd.startswith('battle_'):
         action = cmd[7:]
         await process_battle_action(vk, user_id, action, payload)
@@ -191,13 +225,39 @@ async def handle_callback(vk, user_id, payload):
 
     # ---- НАВИГАЦИЯ ----
     if cmd == 'go_city':
+        user_data = await get_user_async(user_id)
+        context = user_data['context']
+        context['parent_state'] = 'city'
+        await update_user_async(user_id, context=context)
         from .base import navigate_to
         await navigate_to(vk, user_id, 'city')
         return
 
+    if cmd == 'go_city_direct':
+        from locations.city import show_city
+        user_data = await get_user_async(user_id)
+        context = user_data['context']
+        context['parent_state'] = 'city'
+        await update_user_async(user_id, context=context)
+        await show_city(vk, user_id)
+        return
+
     if cmd == 'go_city2':
+        user_data = await get_user_async(user_id)
+        context = user_data['context']
+        context['parent_state'] = 'city2'
+        await update_user_async(user_id, context=context)
         from .base import navigate_to
         await navigate_to(vk, user_id, 'city2')
+        return
+
+    if cmd == 'go_city2_direct':
+        from locations.city import show_city2
+        user_data = await get_user_async(user_id)
+        context = user_data['context']
+        context['parent_state'] = 'city2'
+        await update_user_async(user_id, context=context)
+        await show_city2(vk, user_id)
         return
 
     if cmd == 'go_meadow':
@@ -210,6 +270,11 @@ async def handle_callback(vk, user_id, payload):
         await navigate_to(vk, user_id, 'meadow')
         return
 
+    if cmd == 'go_город2':
+        from locations.city import show_city2
+        await show_city2(vk, user_id)
+        return
+
     if cmd == 'go_инвентарь':
         await show_inventory(vk, user_id)
         return
@@ -217,6 +282,11 @@ async def handle_callback(vk, user_id, payload):
     if cmd == 'go_market':
         from .base import navigate_to
         await navigate_to(vk, user_id, 'market')
+        return
+
+    if cmd == 'go_ратушу':
+        from locations.town_hall import show_town_hall  # ✅ ПРЯМОЙ ИМПОРТ
+        await show_town_hall(vk, user_id)
         return
 
     if cmd == 'go_tavern':
@@ -284,10 +354,11 @@ async def handle_callback(vk, user_id, payload):
     if cmd == 'code_enter':
         await send_message(vk, user_id,
             '📝 Введите промокод:\n\n'
-            '🎁 Доступный код:\n'
-            '• OpenGame → 100 💎 кристаллов + 2000 💰 серебра\n\n'
-            'Код можно использовать только 1 раз!')
-        await update_user_async(user_id, state='awaiting_permanent_promo', context={'parent_state': 'city'})
+            '🎁 Постоянный код:\n'
+            '• OpenGame → 100 💎 кристаллов + 2000 💰 серебра (1 раз на аккаунт)\n\n'
+            '🎁 Одноразовые коды — можно использовать 1 раз')
+        # ✅ Используем awaiting_code для ОБЫЧНЫХ промокодов
+        await update_user_async(user_id, state='awaiting_code', context={'parent_state': 'camp'})
         return
 
     if cmd == 'copy_code':
@@ -306,7 +377,6 @@ async def handle_callback(vk, user_id, payload):
         scroll_type = payload.get('type', 'curse_remove')
         if scroll_id:
             await use_scroll(vk, user_id, scroll_id, scroll_type)
-            # ✅ После использования свитка показываем список свитков
             await show_scrolls(vk, user_id)
         else:
             await send_message(vk, user_id, '❌ Ошибка: свиток не найден.', get_back_keyboard('инвентарь'))
@@ -567,14 +637,12 @@ async def handle_callback(vk, user_id, payload):
         await show_rating(vk, user_id)
         return
 
-        # ---- ГИЛЬДИИ ----
-
+    # ---- ГИЛЬДИИ ----
     if cmd == 'guild':
         from locations.guild import show_guild
         user_data = await get_user_async(user_id)
         current_state = user_data['state']
         
-        # ✅ Если в Стальном Троне — сообщение
         if current_state == 'city':
             await send_message(vk, user_id, 
                 '🏰 Зал гильдии находится в Озерном Крае!\n'
@@ -582,15 +650,7 @@ async def handle_callback(vk, user_id, payload):
                 get_back_keyboard('город'))
             return
         
-        # ✅ Если в Озерном Крае или уже в гильдии — показываем
         await show_guild(vk, user_id, 'город2')
-        return
-        
-        if current_state == 'city2' or current_state == 'guild':
-            await show_guild(vk, user_id, 'город2')
-        else:
-            await send_message(vk, user_id, '❌ Гильдия доступна только в городе!')
-            await show_city2(vk, user_id)
         return
 
     if cmd == 'guild_list':
@@ -605,7 +665,7 @@ async def handle_callback(vk, user_id, payload):
 
     if cmd == 'guild_apply_confirm':
         guild_id = payload.get('guild_id')
-        print(f"🔍 guild_apply_confirm: guild_id={guild_id}")  # ОТЛАДКА
+        print(f"🔍 guild_apply_confirm: guild_id={guild_id}")
         if guild_id:
             from locations.guild import show_guild_apply_confirm
             await show_guild_apply_confirm(vk, user_id, guild_id)
@@ -950,7 +1010,7 @@ async def handle_callback(vk, user_id, payload):
         await show_tavern(vk, user_id)
         return
 
-    # ---- ВТОРОЙ ГОРОД (ВСЕ КОМАНДЫ В ОДНОМ БЛОКЕ) ----
+    # ---- ВТОРОЙ ГОРОД (ВСЕ КОМАНДЫ) ----
     
     # ---- ТАВЕРНА 2 ----
     if cmd == 'go_tavern2':
@@ -998,6 +1058,11 @@ async def handle_callback(vk, user_id, payload):
         return
 
     # ---- РАТУША 2 ----
+    if cmd == 'go_town_hall2':
+        from locations.town_hall2 import show_town_hall2
+        await show_town_hall2(vk, user_id)
+        return
+
     if cmd == 'town_hall2':
         from locations.town_hall2 import show_town_hall2
         await show_town_hall2(vk, user_id)
@@ -1046,7 +1111,7 @@ async def handle_callback(vk, user_id, payload):
         await show_smithy2_upgrade(vk, user_id, crystal_id)
         return
 
-  # ---- АУКЦИОН 2 ----
+    # ---- АУКЦИОН 2 ----
     if cmd == 'go_auction2':
         from locations.auction2 import show_auction2
         await show_auction2(vk, user_id)
@@ -1088,7 +1153,7 @@ async def handle_callback(vk, user_id, payload):
     if cmd == 'auction2_sell_select_item':
         item_type = payload.get('item_type')
         item_id = payload.get('item_id')
-        print(f"🔍 auction2_sell_select_item: item_type={item_type}, item_id={item_id}")  # ✅ ОТЛАДКА
+        print(f"🔍 auction2_sell_select_item: item_type={item_type}, item_id={item_id}")
         if item_type and item_id:
             from locations.auction2 import show_auction2_sell_price
             await show_auction2_sell_price(vk, user_id, item_type, item_id)
@@ -1096,7 +1161,6 @@ async def handle_callback(vk, user_id, payload):
             await send_message(vk, user_id, '❌ Ошибка: предмет не указан.', get_back_keyboard('город2'))
         return
 
-    # ✅ ЭТОТ БЛОК ОТСУТСТВУЕТ!
     if cmd == 'auction2_sell_price':
         price = payload.get('price')
         if price:
@@ -1377,7 +1441,7 @@ async def handle_callback(vk, user_id, payload):
         await graveyard_wander(vk, user_id)
         return
 
-     # ---- ЛАГЕРЬ ----
+    # ---- ЛАГЕРЬ ----
     if cmd == 'go_camp':
         from locations.camp import show_camp
         await show_camp(vk, user_id)
@@ -1386,6 +1450,56 @@ async def handle_callback(vk, user_id, payload):
     if cmd == 'camp':
         from locations.camp import show_camp
         await show_camp(vk, user_id)
+        return
+
+    # ---- РАТУША (ОСНОВНОЙ БЛОК) ----
+    if cmd == 'town_hall':
+        user_data = await get_user_async(user_id)
+        current_state = user_data['state']
+        
+        if current_state == 'city2':
+            from locations.town_hall2 import show_town_hall2
+            await show_town_hall2(vk, user_id)
+        else:
+            from locations.town_hall import show_town_hall
+            await show_town_hall(vk, user_id)
+        return
+
+    if cmd == 'town_hall_class':
+        char = await get_character_async(user_id)
+        if not char:
+            await send_message(vk, user_id, 'Сначала создайте персонажа.', get_back_keyboard('город'))
+            return
+        if char['level'] < 20:
+            await send_message(vk, user_id, '❌ Выбор класс доступен только с 20 уровня.', get_back_keyboard('ратушу'))
+            return
+        if char['class']:
+            await send_message(vk, user_id, f'Вы уже выбрали класс: {char["class"]}.', get_back_keyboard('ратушу'))
+            return
+        await send_message(vk, user_id, 'Выберите свой класс:', get_class_choice_keyboard())
+        return
+
+    # ---- ВЫБОР КЛАССА ВО ВТОРОМ ГОРОДЕ ----
+    if cmd == 'town_hall_class2':
+        from locations.town_hall2 import show_town_hall_class2
+        await show_town_hall_class2(vk, user_id)
+        return
+
+    if cmd == 'town_hall_change_class2':
+        from locations.town_hall2 import show_town_hall_change_class2
+        await show_town_hall_change_class2(vk, user_id)
+        return
+
+    if cmd == 'market':
+        await show_market(vk, user_id)
+        return
+
+    if cmd == 'create_character':
+        if await get_character_async(user_id):
+            await send_message(vk, user_id, 'У вас уже есть персонаж!', get_back_keyboard('город'))
+            return
+        await send_message(vk, user_id, 'Как назовёшь своего героя? Напиши имя в ответ.')
+        await update_user_async(user_id, state='awaiting_name', context={'step': 'name'})
         return
 
     # ---- ОСТАЛЬНЫЕ КОМАНДЫ ----
@@ -1398,9 +1512,9 @@ async def handle_callback(vk, user_id, payload):
         current_state = user_data['state']
         context = user_data['context']
         
-        # ✅ Добавляем 'camp' в разрешённые состояния
         if current_state not in ['city', 'city2', 'inventory', 'camp']:
             await send_message(vk, user_id, '❌ Профиль доступен только в городе, инвентаре или лагере!')
+            from locations.city import show_city
             await show_city(vk, user_id)
             return
         
@@ -1414,25 +1528,13 @@ async def handle_callback(vk, user_id, payload):
         current_state = user_data['state']
         context = user_data['context']
         
-        # ✅ Добавляем 'camp' в разрешённые состояния
         if current_state not in ['city', 'city2', 'inventory', 'camp']:
             await send_message(vk, user_id, '❌ Профиль доступен только в городе, инвентаре или лагере!')
+            from locations.city import show_city
             await show_city(vk, user_id)
             return
         
         context['parent_state'] = 'camp'
-        await update_user_async(user_id, context=context)
-        await show_profile(vk, user_id)
-        return
-        
-        # ✅ Сохраняем parent_state
-        if current_state == 'city2':
-            context['parent_state'] = 'city2'
-        elif current_state == 'inventory':
-            context['parent_state'] = context.get('parent_state', 'city')
-        else:
-            context['parent_state'] = 'city'
-        
         await update_user_async(user_id, context=context)
         await show_profile(vk, user_id)
         return
@@ -1460,6 +1562,7 @@ async def handle_callback(vk, user_id, payload):
         return
 
     if cmd == 'meadow_city':
+        from locations.city import show_city2
         await show_city2(vk, user_id)
         return
 
@@ -1467,35 +1570,6 @@ async def handle_callback(vk, user_id, payload):
         await meadow_herbs(vk, user_id)
         return
 
-    if cmd == 'town_hall':
-        from locations.town_hall import show_town_hall
-        await show_town_hall(vk, user_id)
-        return
-
-    if cmd == 'town_hall_class':
-        char = await get_character_async(user_id)
-        if not char:
-            await send_message(vk, user_id, 'Сначала создайте персонажа.', get_back_keyboard('город'))
-            return
-        if char['level'] < 20:
-            await send_message(vk, user_id, '❌ Выбор класс доступен только с 20 уровня.', get_back_keyboard('ратушу'))
-            return
-        if char['class']:
-            await send_message(vk, user_id, f'Вы уже выбрали класс: {char["class"]}.', get_back_keyboard('ратушу'))
-            return
-        await send_message(vk, user_id, 'Выберите свой класс:', get_class_choice_keyboard())
-        return
-
-    if cmd == 'market':
-        await show_market(vk, user_id)
-        return
-
-    if cmd == 'create_character':
-        if await get_character_async(user_id):
-            await send_message(vk, user_id, 'У вас уже есть персонаж!', get_back_keyboard('город'))
-            return
-        await send_message(vk, user_id, 'Как назовёшь своего героя? Напиши имя в ответ.')
-        await update_user_async(user_id, state='awaiting_name', context={'step': 'name'})
-        return
-
+    # ---- ЕСЛИ НИЧЕГО НЕ ПОДОШЛО ----
+    from locations.city import show_city
     await show_city(vk, user_id)

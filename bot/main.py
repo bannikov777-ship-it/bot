@@ -252,6 +252,8 @@ async def message_handler(message: Message):
                 'awaiting_guild_reject',
                 'scrolls',
                 'awaiting_permanent_promo',
+                'awaiting_class2',
+                'awaiting_change_class2',
             ]
             
             # Если состояние НЕ в списке ожидаемых - игнорируем
@@ -272,6 +274,18 @@ async def message_handler(message: Message):
                 await update_user_async(user_id, state='awaiting_gender', context=context)
                 
                 await send_message(bot.api, user_id, f'👤 Выберите пол для {name}:', get_gender_keyboard())
+                return
+
+                        # ---- ВЫБОР КЛАССА ВО ВТОРОМ ГОРОДЕ ----
+            if state == 'awaiting_class2':
+                from locations.town_hall2 import show_town_hall_class2
+                await show_town_hall_class2(bot.api, user_id)
+                return
+
+            # ---- СМЕНА КЛАССА ВО ВТОРОМ ГОРОДЕ ----
+            if state == 'awaiting_change_class2':
+                from locations.town_hall2 import show_town_hall_change_class2
+                await show_town_hall_change_class2(bot.api, user_id)
                 return
 
             # ---- ОБРАБОТКА ВЫБОРА ПОЛА (текстовый ввод) ----

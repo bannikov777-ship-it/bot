@@ -6,13 +6,12 @@ import string
 from datetime import datetime, timedelta
 from config import DB_NAME
 
-# Функция для проверки и создания таблиц
+
 def ensure_promo_tables():
     """Проверяет существование таблиц и создаёт их если нужно"""
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     
-    # Проверяем таблицу promo_codes
     cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='promo_codes'")
     if not cur.fetchone():
         cur.execute('''
@@ -32,7 +31,6 @@ def ensure_promo_tables():
         ''')
         print("✅ Создана таблица promo_codes")
     
-    # Проверяем таблицу promo_code_uses
     cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='promo_code_uses'")
     if not cur.fetchone():
         cur.execute('''
@@ -54,22 +52,19 @@ def ensure_promo_tables():
 
 
 def generate_code(length=8):
-    """Генерация случайного кода"""
     characters = string.ascii_uppercase + string.digits
     exclude = '0O1I'
     chars = [c for c in characters if c not in exclude]
     return ''.join(random.choice(chars) for _ in range(length))
 
 
-def create_code(amount, expires_days=30, max_uses=1, description=""):
-    """Создание нового кода"""
-    # ✅ Сначала убеждаемся, что таблицы существуют
+def create_code(amount, expires_days=30, max_uses=1, description="", reward_type="crystals"):
+    """Создание нового кода с типом награды"""
     ensure_promo_tables()
     
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     
-    # Генерируем уникальный код
     while True:
         code = generate_code(8)
         cur.execute('SELECT id FROM promo_codes WHERE code = ?', (code,))
@@ -78,10 +73,11 @@ def create_code(amount, expires_days=30, max_uses=1, description=""):
     
     expires_at = datetime.now() + timedelta(days=expires_days)
     
+    # ✅ СОХРАНЯЕМ reward_type
     cur.execute('''
-        INSERT INTO promo_codes (code, amount, max_uses, expires_at, description, created_by)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ''', (code, amount, max_uses, expires_at.isoformat(), description, 1))
+        INSERT INTO promo_codes (code, amount, max_uses, expires_at, description, created_by, reward_type)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (code, amount, max_uses, expires_at.isoformat(), description, 1, reward_type))
     
     conn.commit()
     conn.close()
@@ -90,19 +86,16 @@ def create_code(amount, expires_days=30, max_uses=1, description=""):
 
 def use_code(character_id, code):
     """Использование кода"""
-    # ✅ Сначала убеждаемся, что таблицы существуют
     ensure_promo_tables()
     
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     
-    # Проверяем существование таблицы
     cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='promo_codes'")
     if not cur.fetchone():
         conn.close()
         return False, "Система промокодов ещё не активирована.", 0, None
     
-    # Ищем код
     cur.execute('''
         SELECT id, amount, max_uses, used_count, expires_at, is_active, reward_type
         FROM promo_codes WHERE code = ?
@@ -116,30 +109,26 @@ def use_code(character_id, code):
     code_id, amount, max_uses, used_count, expires_at, is_active, reward_type = row
     reward_type = reward_type or 'crystals'
     
-    # Проверяем активность
     if not is_active:
         conn.close()
         return False, "❌ Код деактивирован.", 0, None
     
-    # Проверяем срок действия
     if expires_at:
         if datetime.now() > datetime.fromisoformat(expires_at):
             conn.close()
             return False, "❌ Срок действия кода истёк.", 0, None
     
-    # Проверяем количество использований
     if used_count >= max_uses:
         conn.close()
         return False, "❌ Код уже использован.", 0, None
     
-    # Проверяем, использовал ли уже этот игрок код
     cur.execute('SELECT id FROM promo_code_uses WHERE code_id = ? AND character_id = ?', 
                 (code_id, character_id))
     if cur.fetchone():
         conn.close()
         return False, "❌ Вы уже использовали этот код.", 0, None
     
-    # Начисляем награду
+    # ✅ НАЧИСЛЯЕМ НАГРАДУ
     if reward_type == 'silver':
         cur.execute('UPDATE characters SET silver = silver + ? WHERE id = ?', 
                     (amount, character_id))
@@ -147,11 +136,9 @@ def use_code(character_id, code):
         cur.execute('UPDATE characters SET crystals = crystals + ? WHERE id = ?', 
                     (amount, character_id))
     
-    # Увеличиваем счётчик использований
     cur.execute('UPDATE promo_codes SET used_count = used_count + 1 WHERE id = ?', 
                 (code_id,))
     
-    # Записываем использование
     cur.execute('''
         INSERT INTO promo_code_uses (code_id, character_id, amount)
         VALUES (?, ?, ?)
@@ -165,8 +152,6 @@ def use_code(character_id, code):
 
 
 def get_codes_stats():
-    """Получение статистики по кодам"""
-    # ✅ Сначала убеждаемся, что таблицы существуют
     ensure_promo_tables()
     
     conn = sqlite3.connect(DB_NAME)
@@ -191,14 +176,12 @@ def get_codes_stats():
 
 
 def get_codes_list(limit=20):
-    """Получение списка кодов"""
-    # ✅ Сначала убеждаемся, что таблицы существуют
     ensure_promo_tables()
     
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     cur.execute('''
-        SELECT code, amount, max_uses, used_count, expires_at, description, created_at, is_active
+        SELECT code, amount, max_uses, used_count, expires_at, description, created_at, is_active, reward_type
         FROM promo_codes
         ORDER BY created_at DESC
         LIMIT ?
@@ -216,6 +199,7 @@ def get_codes_list(limit=20):
             'expires_at': row[4],
             'description': row[5],
             'created_at': row[6],
-            'is_active': row[7]
+            'is_active': row[7],
+            'reward_type': row[8] or 'crystals'
         })
     return codes

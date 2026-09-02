@@ -21,26 +21,14 @@ async def admin_create_code(vk, user_id, amount=100, days=30, max_uses=1, descri
         await send_message(vk, user_id, '❌ Доступ запрещён. Только для администраторов.')
         return
     
+    # ✅ ПЕРЕДАЁМ reward_type В create_code
     code = create_code(
         amount=amount,
         expires_days=days,
         max_uses=max_uses,
-        description=description or f"{amount} {'💎 кристаллов' if reward_type == 'crystals' else '💰 серебра'}"
+        description=description or f"{amount} {'💎 кристаллов' if reward_type == 'crystals' else '💰 серебра'}",
+        reward_type=reward_type  # ✅ ДОБАВЛЕНО
     )
-    
-    # Сохраняем тип награды
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
-    
-    cur.execute("PRAGMA table_info(promo_codes)")
-    columns = [col[1] for col in cur.fetchall()]
-    if 'reward_type' not in columns:
-        cur.execute('ALTER TABLE promo_codes ADD COLUMN reward_type TEXT DEFAULT "crystals"')
-        conn.commit()
-    
-    cur.execute('UPDATE promo_codes SET reward_type = ? WHERE code = ?', (reward_type, code))
-    conn.commit()
-    conn.close()
     
     reward_icon = '💎 кристаллов' if reward_type == 'crystals' else '💰 серебра'
     

@@ -29,14 +29,41 @@ async def show_codes_menu(vk, user_id):
 
 
 async def process_code_enter(vk, user_id, code):
-    """Обработка ввода промокода"""
+    """Обработка ввода промокода (определяем тип автоматически)"""
     char = await get_character_async(user_id)
     if not char:
         await send_message(vk, user_id, 'Сначала создайте персонажа.', get_back_keyboard('город'))
         return
     
     try:
-        result = use_code(char['id'], code.strip())
+        code_upper = code.strip().upper()
+        
+        # ✅ Сначала проверяем постоянный промокод OpenGame
+        if code_upper == 'OPENGAME':
+            from permanent_promo import use_permanent_promo
+            success, msg, reward_type, amount = use_permanent_promo(char['id'], code_upper)
+            
+            if success:
+                char = await get_character_async(user_id)
+                keyboard = VkKeyboard()
+                keyboard.add_button('🏕️ В лагерь', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_camp'})
+                
+                await send_message(vk, user_id, 
+                    f'✅ {msg}\n\n'
+                    f'💰 Серебро: {char.get("silver", 0)}\n'
+                    f'💎 Кристаллы: {char.get("crystals", 0)}',
+                    keyboard)
+                await update_user_async(user_id, state='camp', context={'parent_state': 'camp'})
+            else:
+                keyboard = VkKeyboard()
+                keyboard.add_button('🏕️ В лагерь', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_camp'})
+                await send_message(vk, user_id, f'❌ {msg}', keyboard)
+                await show_codes_menu(vk, user_id)
+            return
+        
+        # ✅ Если не OpenGame — проверяем обычные промокоды
+        from codes import use_code
+        result = use_code(char['id'], code_upper)
         print(f"🔍 use_code вернула: {result}")
         
         if isinstance(result, tuple) and len(result) == 4:
@@ -44,44 +71,11 @@ async def process_code_enter(vk, user_id, code):
             
             if success:
                 char = await get_character_async(user_id)
-                reward_icon = '💰' if reward_type == 'silver' else '💎'
-                reward_name = 'серебра' if reward_type == 'silver' else 'кристаллов'
-                
-                # ✅ КНОПКА "В ЛАГЕРЬ"
                 keyboard = VkKeyboard()
                 keyboard.add_button('🏕️ В лагерь', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_camp'})
                 
                 await send_message(vk, user_id, 
                     f'✅ {msg}\n\n'
-                    f'Ваши текущие средства:\n'
-                    f'💰 Серебро: {char.get("silver", 0)}\n'
-                    f'💎 Кристаллы: {char.get("crystals", 0)}',
-                    keyboard)
-                await update_user_async(user_id, state='camp', context={'parent_state': 'camp'})
-            else:
-                # ✅ КНОПКА "В ЛАГЕРЬ"
-                keyboard = VkKeyboard()
-                keyboard.add_button('🏕️ В лагерь', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_camp'})
-                await send_message(vk, user_id, f'❌ {msg}', keyboard)
-                await show_codes_menu(vk, user_id)
-        
-        elif isinstance(result, tuple) and len(result) == 3:
-            success, msg, reward = result
-            
-            if success:
-                char = await get_character_async(user_id)
-                reward_text = ""
-                if reward and isinstance(reward, dict):
-                    if reward.get('crystals'):
-                        reward_text += f"💎 +{reward['crystals']} кристаллов "
-                    if reward.get('silver'):
-                        reward_text += f"💰 +{reward['silver']} серебра "
-                
-                keyboard = VkKeyboard()
-                keyboard.add_button('🏕️ В лагерь', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_camp'})
-                
-                await send_message(vk, user_id, 
-                    f'✅ {msg}\n{reward_text}\n\n'
                     f'💰 Серебро: {char.get("silver", 0)}\n'
                     f'💎 Кристаллы: {char.get("crystals", 0)}',
                     keyboard)
@@ -91,30 +85,10 @@ async def process_code_enter(vk, user_id, code):
                 keyboard.add_button('🏕️ В лагерь', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_camp'})
                 await send_message(vk, user_id, f'❌ {msg}', keyboard)
                 await show_codes_menu(vk, user_id)
-        
-        elif isinstance(result, tuple) and len(result) == 2:
-            success, msg = result
-            
-            if success:
-                char = await get_character_async(user_id)
-                keyboard = VkKeyboard()
-                keyboard.add_button('🏕️ В лагерь', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_camp'})
-                await send_message(vk, user_id, 
-                    f'✅ {msg}\n\n'
-                    f'💰 Серебро: {char.get("silver", 0)}\n'
-                    f'💎 Кристаллы: {char.get("crystals", 0)}',
-                    keyboard)
-                await update_user_async(user_id, state='camp', context={'parent_state': 'camp'})
-            else:
-                keyboard = VkKeyboard()
-                keyboard.add_button('🏕️ В лагерь', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_camp'})
-                await send_message(vk, user_id, f'❌ {msg}', keyboard)
-                await show_codes_menu(vk, user_id)
-        
         else:
             keyboard = VkKeyboard()
             keyboard.add_button('🏕️ В лагерь', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_camp'})
-            await send_message(vk, user_id, f'❌ Ошибка: неожиданный формат ответа: {result}', keyboard)
+            await send_message(vk, user_id, f'❌ Ошибка: неожиданный формат ответа', keyboard)
             
     except Exception as e:
         print(f"❌ Ошибка при использовании промокода: {e}")

@@ -1,9 +1,12 @@
-# locations/town_hall.py
+# locations/town_hall.py (исправленный)
+
 from core import get_character_async, update_user_async, send_message, get_user_async
 from keyboards import get_town_hall_keyboard, get_class_choice_keyboard, get_back_keyboard
+from vk_api.keyboard import VkKeyboard, VkKeyboardColor
 
 TOWN_HALL_IMAGE = 'photo-240828623_456239029'
 RATING_IMAGE = 'photo-240828623_456239333'
+
 
 async def show_town_hall(vk, user_id):
     """Показ ратуши (первый город)"""
@@ -14,20 +17,18 @@ async def show_town_hall(vk, user_id):
     
     user_data = await get_user_async(user_id)
     context = user_data['context']
-    
-    # ✅ Определяем, откуда пришли
-    if context.get('parent_state') == 'city2':
-        parent = 'город2'
-    else:
-        parent = 'город'
-    
-    context['parent_state'] = parent
+    context['parent_state'] = 'city'
     await update_user_async(user_id, context=context)
     
-    # ✅ Передаём parent в get_town_hall_keyboard
+    keyboard = VkKeyboard()
+    keyboard.add_button('📊 Рейтинг', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'rating'})
+    keyboard.add_line()
+    keyboard.add_button('🏙️ В город', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_city_direct'})
+    
     await send_message(vk, user_id, '🏛 Ратуша – центр управления городом. Что вас интересует?', 
-                      get_town_hall_keyboard(char, parent), attachment=TOWN_HALL_IMAGE)
+                      keyboard, attachment=TOWN_HALL_IMAGE)
     await update_user_async(user_id, state='town_hall', context=context)
+
 
 async def show_rating(vk, user_id):
     """Показ рейтинга"""

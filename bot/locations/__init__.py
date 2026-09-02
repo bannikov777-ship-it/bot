@@ -47,3 +47,4 @@ from .forest import forest_deep, forest_wander, back_to_exit
 from .graveyard import graveyard_deep, graveyard_wander
 from .bridge import show_bridge
 from .shore import show_shore
+from .town_hall2 import show_town_hall2, show_rating2, show_town_hall_class2, show_town_hall_change_class2

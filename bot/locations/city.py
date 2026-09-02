@@ -67,7 +67,6 @@ async def show_city2(vk, user_id):
         keyboard.add_line()
         keyboard.add_button('🛠️ Админ-панель', color=VkKeyboardColor.NEGATIVE, payload={'cmd': 'admin_codes_menu'})
     
-    # ✅ НОВОЕ ФОТО ДЛЯ ОЗЕРНОГО КРАЯ
     await send_message(vk, user_id, text, keyboard, attachment='photo-240828623_456239369')
     
     user_data = await get_user_async(user_id)
