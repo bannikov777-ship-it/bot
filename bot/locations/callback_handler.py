@@ -173,7 +173,18 @@ async def handle_callback(vk, user_id, payload):
             if char['class']:
                 await send_message(vk, user_id, f'Вы уже выбрали класс: {char["class"]}.', get_back_keyboard('город2'))
                 return
-            # ... дальше код
+            
+            conn = sqlite3.connect(DB_NAME)
+            cur = conn.cursor()
+            cur.execute('UPDATE characters SET class = ? WHERE id = ?', (class_name, char['id']))
+            conn.commit()
+            conn.close()
+            await recalc_stats_async(char['id'])
+            
+            await send_message(vk, user_id, f'✅ Вы выбрали класс: {class_name}! Статы обновлены.', get_back_keyboard('город2'))
+            from locations.town_hall2 import show_town_hall2  # ✅ ПРЯМОЙ ИМПОРТ
+            await show_town_hall2(vk, user_id)  # ✅ show_town_hall2, НЕ show_town_hall
+            return
         
         # Если это смена класса во втором городе
         if state == 'awaiting_change_class2':
@@ -183,12 +194,6 @@ async def handle_callback(vk, user_id, payload):
             if not char['class']:
                 await send_message(vk, user_id, '❌ Сначала выберите класс.', get_back_keyboard('город2'))
                 return
-            from locations.town_hall2 import process_change_class2
-            await process_change_class2(vk, user_id, class_name)
-            return
-        
-        # Если это смена класса во втором городе
-        if state == 'awaiting_change_class2':
             from locations.town_hall2 import process_change_class2  # ✅ ПРЯМОЙ ИМПОРТ
             await process_change_class2(vk, user_id, class_name)
             return
@@ -207,6 +212,7 @@ async def handle_callback(vk, user_id, payload):
         conn.close()
         await recalc_stats_async(char['id'])
         await send_message(vk, user_id, f'✅ Вы выбрали класс: {class_name}! Статы обновлены.', get_back_keyboard('ратушу'))
+        from locations.town_hall import show_town_hall  # ✅ ПРЯМОЙ ИМПОРТ
         await show_town_hall(vk, user_id)
         return
 
@@ -439,7 +445,7 @@ async def handle_callback(vk, user_id, payload):
         await send_message(vk, user_id, 'Введите сообщение для чата группы башни:')
         return
 
-    # ---- ИНВЕНТАРЬ ----
+# ---- ИНВЕНТАРЬ ----
     if cmd == 'inventory':
         await show_inventory(vk, user_id)
         return
@@ -453,13 +459,76 @@ async def handle_callback(vk, user_id, payload):
         return
 
     if cmd == 'inventory_equip_prompt':
-        await send_message(vk, user_id, '📝 Введите ID предмета, который хотите экипировать:')
+        print(f"🔍 Обработка inventory_equip_prompt для {user_id}")
+        await send_message(vk, user_id, '📝 Введите ID предмета, который хотите экипировать (можно посмотреть в инвентаре):')
         await update_user_async(user_id, state='awaiting_inventory_equip_id', context={'parent_state': 'inventory'})
         return
 
     if cmd == 'inventory_unequip_prompt':
         await send_message(vk, user_id, '📝 Введите ID предмета, который хотите снять:')
         await update_user_async(user_id, state='awaiting_inventory_unequip_id', context={'parent_state': 'inventory'})
+        return
+
+    if cmd == 'inventory_delete_prompt':
+        await send_message(vk, user_id, '📝 Введите ID предмета, который хотите выкинуть:\n\n⚠️ ВНИМАНИЕ! Предмет будет удалён безвозвратно!')
+        await update_user_async(user_id, state='awaiting_inventory_delete_id', context={'parent_state': 'inventory'})
+        return
+
+    if cmd == 'inventory_delete_confirm':
+        item_id = payload.get('item_id')
+        if item_id:
+            char = await get_character_async(user_id)
+            if not char:
+                await send_message(vk, user_id, 'Сначала создайте персонажа.', get_back_keyboard('город'))
+                return
+            
+            conn = sqlite3.connect(DB_NAME)
+            cur = conn.cursor()
+            cur.execute('SELECT owner_id, quantity FROM player_items WHERE id = ?', (item_id,))
+            row = cur.fetchone()
+            conn.close()
+            
+            if not row:
+                await send_message(vk, user_id, '❌ Предмет не найден.', get_back_keyboard('инвентарь'))
+                await show_inventory(vk, user_id)
+                return
+            
+            owner_id, quantity = row
+            if owner_id != char['id']:
+                await send_message(vk, user_id, '❌ Предмет не принадлежит вам.', get_back_keyboard('инвентарь'))
+                await show_inventory(vk, user_id)
+                return
+            
+            keyboard = VkKeyboard()
+            keyboard.add_button('✅ Да, выкинуть', color=VkKeyboardColor.NEGATIVE, 
+                               payload={'cmd': 'inventory_delete_execute', 'item_id': item_id})
+            keyboard.add_button('❌ Отмена', color=VkKeyboardColor.SECONDARY, 
+                               payload={'cmd': 'inventory'})
+            
+            await send_message(vk, user_id, 
+                f'⚠️ ВЫ УВЕРЕНЫ?\n\n'
+                f'🗑️ Вы собираетесь выкинуть предмет x{quantity}.\n'
+                f'Это действие НЕОБРАТИМО!',
+                keyboard)
+        return
+
+    if cmd == 'inventory_delete_execute':
+        item_id = payload.get('item_id')
+        if item_id:
+            char = await get_character_async(user_id)
+            if not char:
+                await send_message(vk, user_id, 'Сначала создайте персонажа.', get_back_keyboard('город'))
+                return
+            
+            from items import delete_item
+            success, msg = delete_item(item_id, char['id'])
+            
+            if success:
+                await send_message(vk, user_id, f'✅ {msg}', get_back_keyboard('инвентарь'))
+            else:
+                await send_message(vk, user_id, f'❌ {msg}', get_back_keyboard('инвентарь'))
+            
+            await show_inventory(vk, user_id)
         return
 
     if cmd == 'inv_equip_slot':
@@ -905,6 +974,47 @@ async def handle_callback(vk, user_id, payload):
         from locations.guild import show_guild
         await show_guild(vk, user_id)
         return
+
+    if cmd == 'guild_buildings':
+        from locations.guild import show_guild_buildings
+        await show_guild_buildings(vk, user_id)
+        return
+
+    if cmd == 'guild_building_upgrade':
+        building_type = payload.get('building_type')
+        if building_type:
+            char = await get_character_async(user_id)
+            if not char:
+                await send_message(vk, user_id, 'Сначала создайте персонажа.', get_back_keyboard('город'))
+                return
+            
+            guild = await asyncio.to_thread(get_guild_by_character, char['id'])
+            if not guild:
+                await send_message(vk, user_id, 'Вы не состоите в гильдии.', get_back_keyboard('город2'))
+                return
+            
+            if guild['leader_id'] != char['id']:
+                await send_message(vk, user_id, '❌ Только лидер может улучшать строения.', get_back_keyboard('город2'))
+                return
+            
+            from guild import get_building_level, get_building_price, upgrade_building
+            
+            current_level = await asyncio.to_thread(get_building_level, guild['id'], building_type)
+            price = get_building_price(building_type, current_level)
+            
+            if price is None:
+                await send_message(vk, user_id, '❌ Строение уже на максимальном уровне.', get_back_keyboard('город2'))
+                return
+            
+            if guild['silver'] < price:
+                await send_message(vk, user_id, f'❌ Недостаточно серебра в казне! Нужно {price}💰.', get_back_keyboard('город2'))
+                return
+            
+            success, msg = await asyncio.to_thread(upgrade_building, guild['id'], building_type, char['id'])
+            await send_message(vk, user_id, msg, get_back_keyboard('город2'))
+            from locations.guild import show_guild_buildings
+            await show_guild_buildings(vk, user_id)
+        return
     
     # ---- ТАВЕРНА 1 ----
     if cmd == 'tavern':
@@ -1057,6 +1167,24 @@ async def handle_callback(vk, user_id, payload):
         await sleep2_cancel(vk, user_id)
         return
 
+    # ---- КУЗНИЦА 2 ----
+    if cmd == 'go_smithy2':
+        from locations.smithy2 import show_smithy2
+        await show_smithy2(vk, user_id)
+        return
+
+    if cmd == 'smithy2_select_item':
+        item_id = payload.get('item_id')
+        from locations.smithy2 import show_smithy2_upgrade_menu
+        await show_smithy2_upgrade_menu(vk, user_id, item_id)
+        return
+
+    if cmd == 'smithy2_upgrade':
+        crystal_id = payload.get('crystal_id')
+        from locations.smithy2 import show_smithy2_upgrade
+        await show_smithy2_upgrade(vk, user_id, crystal_id)
+        return
+
     # ---- РАТУША 2 ----
     if cmd == 'go_town_hall2':
         from locations.town_hall2 import show_town_hall2
@@ -1079,36 +1207,65 @@ async def handle_callback(vk, user_id, payload):
         await show_market2(vk, user_id)
         return
 
-    if cmd == 'market2_weapons' or cmd == 'market2_armor' or cmd == 'market2_gear' or cmd == 'market2_crystals':
-        from locations.market2 import show_market2_category
-        category = cmd.replace('market2_', '')
-        await show_market2_category(vk, user_id, category)
+    if cmd == 'market2_weapons':
+        from locations.market2 import show_market2_weapons
+        await show_market2_weapons(vk, user_id)
         return
 
-    if cmd == 'market2_buy':
+    if cmd == 'market2_left_hand':
+        from locations.market2 import show_market2_left_hand
+        await show_market2_left_hand(vk, user_id)
+        return
+
+    if cmd == 'market2_buy_weapon':
         item_name = payload.get('item_name')
         price = payload.get('price')
         level = payload.get('level')
-        from locations.market2 import show_market2_buy
-        await show_market2_buy(vk, user_id, item_name, price, level)
+        from locations.market2 import show_market2_buy_weapon
+        await show_market2_buy_weapon(vk, user_id, item_name, price, level)
         return
 
-    # ---- КУЗНИЦА 2 ----
-    if cmd == 'go_smithy2':
-        from locations.smithy2 import show_smithy2
-        await show_smithy2(vk, user_id)
+    if cmd == 'market2_buy_left_hand':
+        item_name = payload.get('item_name')
+        price = payload.get('price')
+        level = payload.get('level')
+        from locations.market2 import show_market2_buy_left_hand
+        await show_market2_buy_left_hand(vk, user_id, item_name, price, level)
         return
 
-    if cmd == 'smithy2_select_item':
-        item_id = payload.get('item_id')
-        from locations.smithy2 import show_smithy2_upgrade_menu
-        await show_smithy2_upgrade_menu(vk, user_id, item_id)
+    if cmd == 'market2_buy_armor':
+        item_name = payload.get('item_name')
+        price = payload.get('price')
+        level = payload.get('level')
+        from locations.market2 import show_market2_buy_armor
+        await show_market2_buy_armor(vk, user_id, item_name, price, level)
         return
 
-    if cmd == 'smithy2_upgrade':
-        crystal_id = payload.get('crystal_id')
-        from locations.smithy2 import show_smithy2_upgrade
-        await show_smithy2_upgrade(vk, user_id, crystal_id)
+    if cmd == 'market2_buy_crystal':
+        item_name = payload.get('item_name')
+        price = payload.get('price')
+        from locations.market2 import show_market2_buy_crystal
+        await show_market2_buy_crystal(vk, user_id, item_name, price)
+        return
+
+    if cmd == 'market2_armor':
+        from locations.market2 import show_market2_armor
+        await show_market2_armor(vk, user_id)
+        return
+
+    if cmd == 'market2_helmets':
+        from locations.market2 import show_market2_helmets
+        await show_market2_helmets(vk, user_id)
+        return
+
+    if cmd == 'market2_boots':
+        from locations.market2 import show_market2_boots
+        await show_market2_boots(vk, user_id)
+        return
+
+    if cmd == 'market2_crystals':
+        from locations.market2 import show_market2_crystals
+        await show_market2_crystals(vk, user_id)
         return
 
     # ---- АУКЦИОН 2 ----

@@ -77,7 +77,7 @@ def render_profile(char, equipment):
     text = (
         f"👤 {id_display} {char['name']}{vip_display} | {gender_display} | {class_display} | Ур.{char['level']} 📈 Опыт: {exp_current} / {exp_needed} [{bar}]\n"
         f"❤️ {char['hp']}/{char['max_hp']} | 💧 {char['mana']}/{char['max_mana']} | ⚡ {char['stamina']}/{char['max_stamina']}\n"
-        f"⚔️ {char['attack']} | 🛡 {char['defense']} | 💥{round(char['crit_chance'])}% | 💨{round(char['dodge_chance'])}% | 🏆 {char.get('trophies', 0)} | 💰 {char['silver']} | 💎 {char.get('crystals', 0)}{vip_bonus_text}\n"
+        f"⚔️ {round(char['attack'])} | 🛡 {round(char['defense'])} | 💥{round(char['crit_chance'])}% | 💨{round(char['dodge_chance'])}% | 🏆 {char.get('trophies', 0)} | 💰 {char['silver']} | 💎 {char.get('crystals', 0)}{vip_bonus_text}\n"
         f"ЭКИПИРОВКА: {equip_line}{debuff_text}{left_hand_hint}"
     )
     return text

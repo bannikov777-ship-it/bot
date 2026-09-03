@@ -118,6 +118,58 @@ async def admin_codes_menu(vk, user_id):
         '• OpenGame → 100 💎 кристаллов + 2000 💰 серебра',
         keyboard)
 
+async def admin_levelup(vk, user_id, target_id=None, levels=1):
+    """Повышение уровня персонажа (админская команда)"""
+    from core import get_character_async, recalc_stats_async, DB_NAME
+    import sqlite3
+    
+    if not await is_admin(user_id):
+        await send_message(vk, user_id, '❌ Только для администраторов!')
+        return
+    
+    # Если target_id не указан — повышаем своего персонажа
+    if target_id is None:
+        target_id = user_id
+    
+    char = await get_character_async(target_id)
+    if not char:
+        await send_message(vk, user_id, '❌ Персонаж не найден.')
+        return
+    
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    
+    new_level = char['level'] + levels
+    new_exp = char['exp']
+    
+    from utils import exp_to_next_level
+    for i in range(levels):
+        current_level = char['level'] + i
+        needed = exp_to_next_level(current_level)
+        new_exp += needed
+    
+    cur.execute('''
+        UPDATE characters 
+        SET level = ?, exp = ?
+        WHERE id = ?
+    ''', (new_level, new_exp, char['id']))
+    conn.commit()
+    conn.close()
+    
+    await recalc_stats_async(char['id'])
+    
+    char = await get_character_async(target_id)
+    
+    await send_message(vk, user_id, 
+        f'✅ Уровень персонажа {char["name"]} повышен на {levels}!\n\n'
+        f'📊 Текущий уровень: {char["level"]}\n'
+        f'❤️ HP: {char["hp"]}/{char["max_hp"]}\n'
+        f'⚔️ Атака: {char["attack"]}\n'
+        f'🛡️ Защита: {char["defense"]}\n'
+        f'💥 Крит: {char["crit_chance"]}%\n'
+        f'💨 Уворот: {char["dodge_chance"]}%'
+    )
+
     # admin.py - добавить команду
 
 async def admin_reset_guild_weekly(vk, user_id):

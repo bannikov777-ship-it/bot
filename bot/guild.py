@@ -707,3 +707,200 @@ def add_guild_exp_weekly(character_id, exp):
     conn.commit()
     conn.close()
     return True
+
+# guild.py - добавить в конец файла
+
+import json
+
+# ==================== СТРОЕНИЯ ГИЛЬДИИ ====================
+
+BUILDINGS_CONFIG = {
+    'attack': {
+        'name': '⚔️ Тотем Атаки',
+        'effect': '+1% атаки за уровень',
+        'base_price': 10000,
+        'max_level': 10,
+        'price_multiplier': 2
+    },
+    'defense': {
+        'name': '🛡️ Тотем Защиты',
+        'effect': '+1% защиты за уровень',
+        'base_price': 10000,
+        'max_level': 10,
+        'price_multiplier': 2
+    },
+    'crit': {
+        'name': '💥 Тотем Крита',
+        'effect': '+1% крита за уровень',
+        'base_price': 15000,
+        'max_level': 10,
+        'price_multiplier': 2
+    },
+    'dodge': {
+        'name': '💨 Тотем Уворота',
+        'effect': '+1% уворота за уровень',
+        'base_price': 15000,
+        'max_level': 10,
+        'price_multiplier': 2
+    },
+    'hp': {
+        'name': '❤️ Тотем HP',
+        'effect': '+2% HP за уровень',
+        'base_price': 20000,
+        'max_level': 10,
+        'price_multiplier': 2
+    }
+}
+
+
+def get_guild_buildings(guild_id):
+    """Получение всех строений гильдии"""
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    
+    # Проверяем, есть ли колонка buildings
+    cur.execute("PRAGMA table_info(guilds)")
+    columns = [col[1] for col in cur.fetchall()]
+    
+    if 'buildings' not in columns:
+        conn.close()
+        return {}
+    
+    cur.execute('SELECT buildings FROM guilds WHERE id = ?', (guild_id,))
+    row = cur.fetchone()
+    conn.close()
+    
+    if not row or not row[0]:
+        return {}
+    
+    try:
+        return json.loads(row[0])
+    except:
+        return {}
+
+
+def get_building_level(guild_id, building_type):
+    """Получение уровня конкретного строения"""
+    buildings = get_guild_buildings(guild_id)
+    return buildings.get(building_type, 0)
+
+
+def get_building_price(building_type, current_level):
+    """Расчёт цены для улучшения строения"""
+    config = BUILDINGS_CONFIG.get(building_type)
+    if not config:
+        return None
+    
+    if current_level >= config['max_level']:
+        return None
+    
+    next_level = current_level + 1
+    price = config['base_price'] * (config['price_multiplier'] ** (next_level - 1))
+    return int(price)
+
+
+def upgrade_building(guild_id, building_type, character_id):
+    """Улучшение строения гильдии"""
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    
+    # Проверяем, что игрок — лидер гильдии
+    cur.execute('SELECT leader_id, silver FROM guilds WHERE id = ?', (guild_id,))
+    row = cur.fetchone()
+    if not row:
+        conn.close()
+        return False, "Гильдия не найдена"
+    
+    leader_id, guild_silver = row
+    if leader_id != character_id:
+        conn.close()
+        return False, "Только лидер может улучшать строения"
+    
+    # Проверяем конфигурацию
+    config = BUILDINGS_CONFIG.get(building_type)
+    if not config:
+        conn.close()
+        return False, "Неизвестный тип строения"
+    
+    # Проверяем, есть ли колонка buildings
+    cur.execute("PRAGMA table_info(guilds)")
+    columns = [col[1] for col in cur.fetchall()]
+    
+    if 'buildings' not in columns:
+        # Добавляем колонку
+        cur.execute('ALTER TABLE guilds ADD COLUMN buildings TEXT DEFAULT "{}"')
+        conn.commit()
+    
+    # Получаем текущий уровень
+    buildings = get_guild_buildings(guild_id)
+    current_level = buildings.get(building_type, 0)
+    
+    if current_level >= config['max_level']:
+        conn.close()
+        return False, f"Строение уже на максимальном уровне ({config['max_level']})"
+    
+    # Рассчитываем цену
+    price = get_building_price(building_type, current_level)
+    if price is None:
+        conn.close()
+        return False, "Ошибка расчёта цены"
+    
+    # Проверяем серебро гильдии
+    if guild_silver < price:
+        conn.close()
+        return False, f"Недостаточно серебра в казне! Нужно {price}💰"
+    
+    # Обновляем уровень
+    buildings[building_type] = current_level + 1
+    cur.execute('UPDATE guilds SET buildings = ?, silver = silver - ? WHERE id = ?', 
+                (json.dumps(buildings), price, guild_id))
+    conn.commit()
+    conn.close()
+    
+    return True, f"✅ {config['name']} улучшен до {current_level + 1} уровня за {price}💰!"
+
+
+def get_guild_bonuses_from_buildings(guild_id):
+    """Получение всех бонусов от строений гильдии"""
+    buildings = get_guild_buildings(guild_id)
+    
+    bonuses = {
+        'attack': 0,
+        'defense': 0,
+        'crit': 0,
+        'dodge': 0,
+        'hp': 0
+    }
+    
+    for building_type, level in buildings.items():
+        config = BUILDINGS_CONFIG.get(building_type)
+        if not config:
+            continue
+        
+        if building_type == 'attack':
+            bonuses['attack'] += level
+        elif building_type == 'defense':
+            bonuses['defense'] += level
+        elif building_type == 'crit':
+            bonuses['crit'] += level
+        elif building_type == 'dodge':
+            bonuses['dodge'] += level
+        elif building_type == 'hp':
+            bonuses['hp'] += level * 2  # ✅ 2% за уровень
+    
+    return bonuses
+
+
+def get_guild_bonus_for_character(character_id):
+    """Получение бонусов гильдии для персонажа"""
+    guild = get_guild_by_character(character_id)
+    if not guild:
+        return {'attack': 0, 'defense': 0, 'crit': 0, 'dodge': 0, 'hp': 0}
+    
+    bonuses = get_guild_bonuses_from_buildings(guild['id'])
+    
+    # ✅ Убеждаемся, что hp есть в словаре
+    if 'hp' not in bonuses:
+        bonuses['hp'] = 0
+    
+    return bonuses

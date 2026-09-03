@@ -53,7 +53,8 @@ def render_battle(battle, player_name='Вы'):
         parry_status = f"🔄 [{p_charge_bar}] {parry_charges}/4"
     
     # ===== ХАРАКТЕРИСТИКИ ИГРОКА =====
-    player_stats = f"⚔️ {battle['player_attack']}  🛡️ {battle['player_defense']}"
+    # ===== ХАРАКТЕРИСТИКИ ИГРОКА (с округлением) =====
+    player_stats = f"⚔️ {round(battle['player_attack'])}  🛡️ {round(battle['player_defense'])}"
     
     crit = battle.get('crit_chance', 0)
     dodge = battle.get('dodge_chance', 0)

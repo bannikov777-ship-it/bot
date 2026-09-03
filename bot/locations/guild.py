@@ -39,9 +39,7 @@ async def show_guild(vk, user_id, parent='город'):
 
     user_data = await get_user_async(user_id)
     current_state = user_data['state']
-    context = user_data['context']
 
-    # ✅ Если в Стальном Троне — показываем сообщение
     if current_state == 'city':
         await send_message(vk, user_id,
             '🏰 Зал гильдии находится в Озерном Крае!\n'
@@ -49,6 +47,7 @@ async def show_guild(vk, user_id, parent='город'):
             get_back_keyboard('город'))
         return
 
+    context = user_data['context']
     context['parent_state'] = parent
     await update_user_async(user_id, context=context)
 
@@ -77,7 +76,33 @@ async def show_guild(vk, user_id, parent='город'):
     filled = int(progress * bar_length)
     bar = "█" * filled + "░" * (bar_length - filled)
 
-    text = f"🏰 {guild['name']}\nУровень: {guild['level']} | Опыт: {exp_current} / {exp_needed} [{bar}]\n💰{guild['silver']}\nЛидер: {leader_name}\nУчастников: {len(get_guild_members(guild['id']))}/{guild['max_members']}"
+    # ✅ ПОЛУЧАЕМ БОНУСЫ ОТ СТРОЕНИЙ
+    from guild import get_guild_bonuses_from_buildings
+    bonuses = get_guild_bonuses_from_buildings(guild['id'])
+    
+    # Формируем текст бонусов
+    bonus_text = ""
+    if bonuses['attack'] > 0 or bonuses['defense'] > 0 or bonuses['crit'] > 0 or bonuses['dodge'] > 0 or bonuses['hp'] > 0:
+        bonus_text = "\n📊 Бонусы гильдии:\n"
+        if bonuses['attack'] > 0:
+            bonus_text += f"  ⚔️ Атака: +{bonuses['attack']}%\n"
+        if bonuses['defense'] > 0:
+            bonus_text += f"  🛡️ Защита: +{bonuses['defense']}%\n"
+        if bonuses['crit'] > 0:
+            bonus_text += f"  💥 Крит: +{bonuses['crit']}%\n"
+        if bonuses['dodge'] > 0:
+            bonus_text += f"  💨 Уворот: +{bonuses['dodge']}%\n"
+        if bonuses['hp'] > 0:
+            bonus_text += f"  ❤️ HP: +{bonuses['hp']}%"
+
+    text = (
+        f"🏰 {guild['name']}\n"
+        f"📊 Уровень: {guild['level']} | Опыт: {exp_current} / {exp_needed} [{bar}]\n"
+        f"💰 Казна: {guild['silver']} серебра\n"
+        f"👑 Лидер: {leader_name}\n"
+        f"👥 Участников: {len(get_guild_members(guild['id']))}/{guild['max_members']}"
+        f"{bonus_text}"
+    )
 
     keyboard = get_guild_keyboard(guild, my_rank, parent)
 
@@ -1054,3 +1079,68 @@ async def show_guild_disband_execute(vk, user_id):
         await show_city2(vk, user_id)
     else:
         await send_message(vk, user_id, f'❌ {msg}', get_back_keyboard('город2'))
+
+
+# ==================== СТРОЕНИЯ ГИЛЬДИИ ====================
+
+async def show_guild_buildings(vk, user_id):
+    """Показ строений гильдии"""
+    char = await get_character_async(user_id)
+    if not char:
+        await send_message(vk, user_id, 'Сначала создайте персонажа.', get_back_keyboard('город'))
+        return
+    
+    guild = await asyncio.to_thread(get_guild_by_character, char['id'])
+    if not guild:
+        await send_message(vk, user_id, 'Вы не состоите в гильдии.', get_back_keyboard('город2'))
+        return
+    
+    from guild import BUILDINGS_CONFIG, get_guild_buildings, get_building_price, get_building_level
+    
+    buildings = await asyncio.to_thread(get_guild_buildings, guild['id'])
+    is_leader = guild['leader_id'] == char['id']
+    
+    text = f"🏗️ Строения гильдии «{guild['name']}»\n\n"
+    text += f"💰 Казна: {guild['silver']} серебра\n\n"
+    
+    keyboard = VkKeyboard()
+    
+    for building_type, config in BUILDINGS_CONFIG.items():
+        current_level = buildings.get(building_type, 0)
+        max_level = config['max_level']
+        
+        # Определяем название и бонус
+        if building_type == 'attack':
+            bonus_text = f"+{current_level}% атаки"
+        elif building_type == 'defense':
+            bonus_text = f"+{current_level}% защиты"
+        elif building_type == 'crit':
+            bonus_text = f"+{current_level}% крита"
+        elif building_type == 'dodge':
+            bonus_text = f"+{current_level}% уворота"
+        elif building_type == 'hp':
+            bonus_text = f"+{current_level * 2}% HP"
+        
+        text += f"{config['name']} — {bonus_text}\n"
+        text += f"📊 Уровень: {current_level}/{max_level}\n"
+        
+        if current_level < max_level:
+            price = get_building_price(building_type, current_level)
+            if is_leader:
+                text += f"💰 Улучшить: {price}💰\n"
+                keyboard.add_button(
+                    f"⬆️ {config['name'][:10]} → {current_level+1} ({price}💰)",
+                    color=VkKeyboardColor.PRIMARY,
+                    payload={'cmd': 'guild_building_upgrade', 'building_type': building_type}
+                )
+            else:
+                text += f"💰 Только лидер может улучшать\n"
+        else:
+            text += f"⭐ МАКСИМАЛЬНЫЙ УРОВЕНЬ!\n"
+        
+        text += "\n"
+        keyboard.add_line()
+    
+    keyboard.add_button('🏰 В гильдию', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_guild'})
+    
+    await send_message(vk, user_id, text, keyboard)       

@@ -15,6 +15,8 @@ from crafting import get_craft_recipes, craft_item
 from vk_api.keyboard import VkKeyboard, VkKeyboardColor
 from .base import navigate_to
 
+attachment = "photo-240828623_456239162"
+
 async def show_healer(vk, user_id):
     """Показ лекаря"""
     try:
@@ -38,7 +40,7 @@ async def show_healer(vk, user_id):
         keyboard.add_button('🏪 На рынок', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_market'})
         attachment = "photo-240828623_456239162"
         
-        await send_message(vk, user_id, f'💊 Лекарь\nВаши 💰: {char["silver"]}\n\nВыберите действие:', keyboard)
+        await send_message(vk, user_id, f'💊 Лекарь\nВаши 💰: {char["silver"]}\n\nВыберите действие:', keyboard, attachment=attachment)
         
         user_data = await get_user_async(user_id)
         context = user_data['context']

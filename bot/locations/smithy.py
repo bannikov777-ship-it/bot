@@ -71,32 +71,32 @@ def get_upgrade_chance(upgrade_level):
     """
     Получение шанса заточки в зависимости от уровня
     
-    ✅ Правильные шансы:
+    ✅ Новые шансы:
     0-3: 100%
-    4: 90%
-    5: 80%
-    6: 70%
-    7: 60%
-    8: 50%
-    9: 40%
-    10: 30%
+    4: 85%
+    5: 75%
+    6: 65%
+    7: 50%
+    8: 40%
+    9: 30%
+    10: 10%
     """
     if upgrade_level < 4:
         return 100
     elif upgrade_level == 4:
-        return 90
+        return 85
     elif upgrade_level == 5:
-        return 80
+        return 75
     elif upgrade_level == 6:
-        return 70
+        return 65
     elif upgrade_level == 7:
-        return 60
-    elif upgrade_level == 8:
         return 50
-    elif upgrade_level == 9:
+    elif upgrade_level == 8:
         return 40
-    elif upgrade_level >= 10:
+    elif upgrade_level == 9:
         return 30
+    elif upgrade_level >= 10:
+        return 10
     return 100
 
 

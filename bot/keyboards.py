@@ -254,8 +254,9 @@ def get_guild_keyboard(guild, my_rank, parent='город'):
     keyboard.add_button('📜 Квесты гильдии', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'guild_quests'})
     keyboard.add_line()
     
-    # Строка 4 - 1 кнопка
+    # Строка 4 - 2 кнопки
     keyboard.add_button('📌 Мой квест', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'guild_quest_status'})
+    keyboard.add_button('🏗️ Строения', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'guild_buildings'})  # ✅ НОВОЕ
     keyboard.add_line()
     
     # Строка 5 - 1 кнопка (возврат)
@@ -370,12 +371,18 @@ def get_battle_keyboard(player_class):
     keyboard.add_button('🛡 Защита (10% STA)', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'battle_defend'})
     keyboard.add_line()
     keyboard.add_button('🌀 Парирование', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'battle_parry'})
+    
+    # ✅ КНОПКИ КЛАССОВ (все используют 'battle_super')
     if player_class == 'Оруженосец':
-        keyboard.add_button('🛡 Стойка', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'battle_super'})
+        keyboard.add_button('🛡 Стойка (10 STA)', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'battle_super'})
     elif player_class == 'Охотник':
-        keyboard.add_button('🏹 Меткий выстрел', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'battle_super'})
+        keyboard.add_button('🏹 Меткий выстрел (10 STA)', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'battle_super'})
     elif player_class == 'Послушник':
-        keyboard.add_button('✨ Исцеление', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'battle_magic'})
+        keyboard.add_button('✨ Исцеление (10 MP)', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'battle_super'})
+    else:
+        # Если класс не выбран — показываем суперудар
+        keyboard.add_button('🔥 Суперудар', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'battle_super'})
+    
     keyboard.add_line()
     keyboard.add_button('💊 Зелье', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'battle_potion'})
     keyboard.add_button('🏃 Сбежать', color=VkKeyboardColor.NEGATIVE, payload={'cmd': 'battle_flee'})

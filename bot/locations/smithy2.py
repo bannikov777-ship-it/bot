@@ -35,7 +35,6 @@ async def show_smithy2(vk, user_id):
             upgrade_level = item['upgrade_level']
             rarity = item['rarity']
             
-            # Цена улучшения
             rarity_price_mult = {1: 1.0, 2: 1.5, 3: 2.5, 4: 4.0, 5: 6.0}
             base_price = 100 + upgrade_level * 250
             price = int(base_price * rarity_price_mult.get(rarity, 1.0))
@@ -47,7 +46,7 @@ async def show_smithy2(vk, user_id):
             )
             keyboard.add_line()
         
-        keyboard.add_button('🏙️ В Озерный Край', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_city2'})
+        keyboard.add_button('🏙️ В Озерный Край', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_city2_direct'})
         
         await send_message(vk, user_id, text, keyboard, attachment=SMITHY2_IMAGE)
         await update_user_async(user_id, state='smithy2', context=context)
@@ -87,19 +86,19 @@ async def show_smithy2_upgrade_menu(vk, user_id, item_id):
         if upgrade_level < 4:
             base_chance = 100
         elif upgrade_level == 4:
-            base_chance = 90
+            base_chance = 85
         elif upgrade_level == 5:
-            base_chance = 80
+            base_chance = 75
         elif upgrade_level == 6:
-            base_chance = 70
+            base_chance = 65
         elif upgrade_level == 7:
-            base_chance = 60
-        elif upgrade_level == 8:
             base_chance = 50
-        elif upgrade_level == 9:
+        elif upgrade_level == 8:
             base_chance = 40
-        else:
+        elif upgrade_level == 9:
             base_chance = 30
+        else:
+            base_chance = 10
         
         # Цена
         rarity_price_mult = {1: 1.0, 2: 1.5, 3: 2.5, 4: 4.0, 5: 6.0}

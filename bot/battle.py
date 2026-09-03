@@ -344,34 +344,50 @@ async def process_battle_action(vk, user_id, action, payload=None):
         return
         
     elif action == 'super':
-        if battle['player_stamina'] < 10:
-            battle['log'].append("❌ Недостаточно выносливости (нужно 10).")
-            await save_battle_and_send(vk, user_id, context)
-            return
-        battle['player_stamina'] -= 10
-        super_damage = battle['player_attack'] * 2 + random.randint(0, 5)
-        monster['hp'] -= super_damage
-        battle['log'].append(f"🔥 Суперудар! {super_damage} урона.")
+        player_class = battle.get('player_class', '')
         
-        # Пополняем заряд парирования после суперудара
+        if player_class == 'Послушник':
+            # ✨ Исцеление — тратит МАНУ (не стамину)
+            if battle['player_mana'] < 10:
+                battle['log'].append("❌ Недостаточно маны (нужно 10).")
+                await save_battle_and_send(vk, user_id, context)
+                return
+            battle['player_mana'] -= 10
+            
+            # Лечит HP (атака ×1.3 + 5-15)
+            heal = int(battle['player_attack'] * 1.3) + random.randint(5, 15)
+            battle['player_hp'] = min(battle['player_max_hp'], battle['player_hp'] + heal)
+            battle['log'].append(f"✨ Исцеление: +{heal} HP.")
+            
+        else:
+            # Оруженосец и Охотник — тратят СТАМИНУ
+            if battle['player_stamina'] < 10:
+                battle['log'].append("❌ Недостаточно выносливости (нужно 10).")
+                await save_battle_and_send(vk, user_id, context)
+                return
+            battle['player_stamina'] -= 10
+            
+            if player_class == 'Оруженосец':
+                # 🛡 Стойка — защита ×2 на 3 хода
+                battle['shield'] = True
+                battle['shield_active'] = True
+                battle['shield_duration'] = 3
+                battle['log'].append(f"🛡 Стойка! Защита увеличена вдвое на 3 хода.")
+                
+            elif player_class == 'Охотник':
+                # 🏹 Меткий выстрел — атака ×1.7
+                damage = int(battle['player_attack'] * 1.7) + random.randint(0, 5)
+                monster['hp'] -= damage
+                battle['log'].append(f"🏹 Меткий выстрел! {damage} урона.")
+                
+            else:
+                # Если класс не определён
+                super_damage = battle['player_attack'] * 2 + random.randint(0, 5)
+                monster['hp'] -= super_damage
+                battle['log'].append(f"🔥 Суперудар! {super_damage} урона.")
+        
+        # Пополняем заряд парирования
         battle['parry_charges'] = min(4, battle.get('parry_charges', 0) + 1)
-        
-    elif action == 'magic':
-        if battle['player_mana'] < 5:
-            battle['log'].append("❌ Недостаточно маны.")
-            await save_battle_and_send(vk, user_id, context)
-            return
-        battle['player_mana'] -= 5
-        heal = random.randint(15, 30)
-        battle['player_hp'] = min(battle['player_max_hp'], battle['player_hp'] + heal)
-        battle['log'].append(f"✨ Исцеление: +{heal} HP.")
-        
-        # Пополняем заряд парирования после магии
-        battle['parry_charges'] = min(4, battle.get('parry_charges', 0) + 1)
-        
-    elif action == 'potion':
-        await show_battle_potions(vk, user_id)
-        return
         
     elif action == 'flee':
         if random.random() < 0.3:
@@ -491,6 +507,8 @@ def _check_player_level_up_sync(character_id):
     conn.close()
     return leveled
 
+# battle.py - end_battle() (исправленная структура)
+
 async def end_battle(vk, user_id, won, fled=False):
     from locations import show_city, show_exit, show_church
 
@@ -520,8 +538,8 @@ async def end_battle(vk, user_id, won, fled=False):
             return
 
         if won:
-            exp_gain = battle['monster']['exp']
-            silver_gain = battle['monster']['silver']
+            base_exp = battle['monster']['exp']
+            base_silver = battle['monster']['silver']
             tier = battle['monster'].get('tier', 1)
             is_boss = battle['monster'].get('is_boss', False)
             drop_chance = battle['monster'].get('drop_chance', 0.25)
@@ -538,26 +556,36 @@ async def end_battle(vk, user_id, won, fled=False):
             conn = sqlite3.connect(DB_NAME)
             cur = conn.cursor()
 
-            # VIP бонус
+            # ===== VIP БОНУС (ПРАВИЛЬНЫЙ РАСЧЁТ) =====
             from vip import get_vip, get_vip_bonus, VIP_NAMES, VIP_COLORS
+            
             vip_level, _ = get_vip(char['id'])
-            vip_text = ""
             exp_bonus = 0
             silver_bonus = 0
+            vip_text = ""
             
             if vip_level > 0:
                 bonus = get_vip_bonus(vip_level)
-                exp_bonus = int(exp_gain * bonus['exp'] / 100)
-                silver_bonus = int(silver_gain * bonus['silver'] / 100)
-                exp_gain += exp_bonus
-                silver_gain += silver_bonus
+                exp_bonus = int(base_exp * bonus['exp'] / 100)
+                silver_bonus = int(base_silver * bonus['silver'] / 100)
                 
                 vip_icon = VIP_COLORS.get(vip_level, '')
                 vip_name = VIP_NAMES.get(vip_level, '')
-                vip_text = f"\n👑 VIP {vip_name} (+{bonus['exp']}%): +{exp_bonus} опыта, +{silver_bonus} серебра"
+                
+                # ✅ КРАСИВОЕ ОТОБРАЖЕНИЕ
+                vip_text = (
+                    f"\n\n👑 VIP {vip_name} (+{bonus['exp']}%)\n\n"
+                    f"🎯 Базовый опыт: {base_exp}\n"
+                    f"✨ Бонус VIP: +{exp_bonus}\n\n"
+                    f"💰 Базовое серебро: {base_silver}\n"
+                    f"✨ Бонус VIP: +{silver_bonus}"
+                )
+            
+            total_exp = base_exp + exp_bonus
+            total_silver = base_silver + silver_bonus
 
-            char['exp'] += exp_gain
-            char['silver'] += silver_gain
+            char['exp'] += total_exp
+            char['silver'] += total_silver
 
             drop = drop_resource_for_monster(zone, tier, is_boss, drop_chance)
             drop_text = ""
@@ -608,27 +636,7 @@ async def end_battle(vk, user_id, won, fled=False):
 
             guild = await asyncio.to_thread(get_guild_by_character, char['id'])
             if guild:
-                guild_exp = max(1, exp_gain // 10)
-                
-                # Обновляем общий вклад игрока
-                cur.execute('UPDATE characters SET guild_exp_contributed = guild_exp_contributed + ? WHERE id = ?', 
-                            (guild_exp, char['id']))
-                
-                # ✅ Обновляем еженедельный вклад игрока
-                cur.execute('UPDATE characters SET guild_exp_weekly = guild_exp_weekly + ? WHERE id = ?', 
-                            (guild_exp, char['id']))
-                cur.execute('UPDATE characters SET guild_exp_updated_at = CURRENT_TIMESTAMP WHERE id = ?', 
-                            (char['id'],))
-                
-                # Обновляем еженедельный опыт гильдии
-                cur.execute('UPDATE guilds SET weekly_exp = weekly_exp + ? WHERE id = ?', 
-                            (guild_exp, guild['id']))
-                
-                # Обновляем опыт гильдии (уровень)
-                try:
-                    new_level = add_guild_exp(guild['id'], guild_exp)
-                except Exception as e:
-                    print(f"⚠️ Ошибка добавления опыта гильдии: {e}")
+                guild_exp = max(1, total_exp // 10)
             
                 guild = await asyncio.to_thread(get_guild_by_character, char['id'])
                 if guild:
@@ -655,15 +663,25 @@ async def end_battle(vk, user_id, won, fled=False):
             if leveled:
                 char = await get_character_async(user_id)
 
-            result_text = (
-                f"⚔️ Победа!\n"
-                f"Вы убили {battle['monster']['name']}!\n"
-                f"Получено опыта: {exp_gain}\n"
-                f"Получено серебра: {silver_gain}\n"
-                f"{vip_text}\n"
-                f"{drop_text}{chest_text}\n"
-                f"Вы находитесь на глубине {depth}"
-            )
+            # ✅ ФОРМИРУЕМ ФИНАЛЬНОЕ СООБЩЕНИЕ
+            if vip_text:
+                result_text = (
+                    f"⚔️ Победа!\n"
+                    f"Вы убили {battle['monster']['name']}!"
+                    f"{vip_text}"
+                    f"\n\n🎁 Итого получено: {total_exp} опыта, {total_silver} серебра"
+                    f"{drop_text}{chest_text}"
+                    f"\nВы находитесь на глубине {depth}"
+                )
+            else:
+                result_text = (
+                    f"⚔️ Победа!\n"
+                    f"Вы убили {battle['monster']['name']}!\n"
+                    f"Получено опыта: {total_exp}\n"
+                    f"Получено серебра: {total_silver}"
+                    f"{drop_text}{chest_text}"
+                    f"\nВы находитесь на глубине {depth}"
+                )
 
         else:
             apply_debuff(char['id'], 1)
@@ -707,6 +725,7 @@ async def end_battle(vk, user_id, won, fled=False):
         else:
             await send_message(vk, user_id, result_text, get_back_keyboard('город'))
             await show_exit(vk, user_id)
+            
     except Exception as e:
         print(f"❌ Ошибка в end_battle для пользователя {user_id}:")
         traceback.print_exc()

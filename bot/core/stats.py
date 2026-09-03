@@ -4,16 +4,17 @@ from config import DB_NAME
 from items import get_equipped_items
 
 CLASS_BASE_STATS = {
-    'Оруженосец': {'attack': 8, 'defense': 5, 'hp': 150, 'mana': 10, 'stamina': 60, 'crit': 3, 'dodge': 3},
-    'Охотник': {'attack': 18, 'defense': 1, 'hp': 90, 'mana': 20, 'stamina': 50, 'crit': 8, 'dodge': 8},
-    'Послушник': {'attack': 8, 'defense': 2, 'hp': 100, 'mana': 80, 'stamina': 40, 'crit': 4, 'dodge': 4}
+    'Оруженосец': {'attack': 7, 'defense': 5, 'hp': 150, 'mana': 0, 'stamina': 60, 'crit': 2, 'dodge': 1},
+    'Охотник': {'attack': 9, 'defense': 1, 'hp': 90, 'mana': 0, 'stamina': 50, 'crit': 3, 'dodge': 4},
+    'Послушник': {'attack': 13, 'defense': 0.1, 'hp': 100, 'mana': 80, 'stamina': 0, 'crit': 5, 'dodge': 1}
 }
 
 CLASS_GROWTH = {
-    'Оруженосец': {'attack': 1, 'defense': 2, 'hp': 12, 'mana': 2, 'stamina': 4, 'crit': 0.3, 'dodge': 0.3},
-    'Охотник': {'attack': 3, 'defense': 0, 'hp': 8, 'mana': 4, 'stamina': 3, 'crit': 1, 'dodge': 1},
-    'Послушник': {'attack': 1, 'defense': 1, 'hp': 8, 'mana': 10, 'stamina': 2, 'crit': 0.4, 'dodge': 0.4}
+    'Оруженосец': {'attack': 1, 'defense': 1, 'hp': 15, 'mana': 0, 'stamina': 5, 'crit': 0.8, 'dodge': 0.6},
+    'Охотник': {'attack': 1.2, 'defense': 0.4, 'hp': 7, 'mana': 0, 'stamina': 10, 'crit': 1, 'dodge': 0.9},
+    'Послушник': {'attack': 1.4, 'defense': 0.2, 'hp': 7, 'mana': 7, 'stamina': 0, 'crit': 1.3, 'dodge': 0.1}
 }
+
 
 NEUTRAL_STATS = {'attack': 10, 'defense': 2, 'hp': 100, 'mana': 20, 'stamina': 50, 'crit': 5, 'dodge': 5}
 NEUTRAL_GROWTH = {'attack': 1, 'defense': 1, 'hp': 10, 'mana': 5, 'stamina': 3, 'crit': 0.3, 'dodge': 0.3}
@@ -59,10 +60,26 @@ def recalc_stats(character_id):
         base_mana = int(base_mana * 0.5)
         base_stamina = int(base_stamina * 0.5)
     
+    # ============================================================
+    # ✅ ДОБАВЛЯЕМ БОНУСЫ ОТ СТРОЕНИЙ ГИЛЬДИИ
+    # ============================================================
+    from guild import get_guild_bonus_for_character
+    guild_bonus = get_guild_bonus_for_character(character_id)
+    
+    # Применяем бонусы (в процентах)
+    hp_bonus_percent = guild_bonus.get('hp', 0)
+    
+    base_attack += int(base_attack * guild_bonus.get('attack', 0) / 100)
+    base_defense += int(base_defense * guild_bonus.get('defense', 0) / 100)
+    base_hp += int(base_hp * hp_bonus_percent / 100)  # ✅ ТЕПЕРЬ РАБОТАЕТ
+    base_crit += guild_bonus.get('crit', 0)
+    base_dodge += guild_bonus.get('dodge', 0)
+    
+    # ============================================================
     # Добавление бонусов от экипировки
+    # ============================================================
     equipped = get_equipped_items(character_id)
     
-    # ИНИЦИАЛИЗИРУЕМ ПЕРЕМЕННЫЕ ДО ЦИКЛА
     crit_bonus = 0
     dodge_bonus = 0
     

@@ -4,7 +4,7 @@ from core import get_character_async, update_user_async, send_message, get_user_
 from keyboards import get_back_keyboard
 from vk_api.keyboard import VkKeyboard, VkKeyboardColor
 
-BRIDGE_IMAGE = 'photo-240828623_456239036'
+BRIDGE_IMAGE = 'photo-240828623_456239480'
 
 
 async def show_bridge(vk, user_id):

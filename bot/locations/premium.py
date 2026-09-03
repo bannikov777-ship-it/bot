@@ -23,8 +23,35 @@ async def show_premium_shop(vk, user_id):
         text += "Товаров пока нет."
     else:
         for item in items:
-            text += f"📌 ID: {item['id']} {item['icon']} {item['name']} 💰 {item['price']}💎\n"
-            text += f"📝 {item['description']}\n\n"
+            # Форматируем название в зависимости от типа
+            name = item['name']
+            icon = item['icon']
+            price = item['price']
+            
+            # Для кристаллов показываем цвета
+            if 'слабых' in name or 'средних' in name or 'сильных' in name:
+                if 'слабых' in name:
+                    name = '🔵 Кристалл заточки x10 (15%)'
+                elif 'средних' in name:
+                    name = '🟣 Кристалл заточки x5 (35%)'
+                elif 'сильных' in name:
+                    name = '🔴 Кристалл заточки x3 (55%)'
+                # Убираем иконку 💎 (она уже в названии)
+                icon = ''
+            elif 'Свиток' in name:
+                name = '📜 Свиток проклятий'
+                icon = ''
+            elif 'VIP' in name:
+                # VIP оставляем как есть, но убираем лишнее
+                if '25%' in name:
+                    name = '⬜ VIP 25%'
+                elif '50%' in name:
+                    name = '🌟 VIP 50%'
+                elif '100%' in name:
+                    name = '👑 VIP 100%'
+                icon = ''
+            
+            text += f"📌 ID:{item['id']} {name} {price}💎\n"
     
     keyboard = VkKeyboard()
     keyboard.add_button('🛒 Купить по ID', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'premium_buy_prompt'})

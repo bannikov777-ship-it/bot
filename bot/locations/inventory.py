@@ -166,11 +166,11 @@ async def show_inventory(vk, user_id):
     keyboard.add_button('📥 Экипировать по ID', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'inventory_equip_prompt'})
     keyboard.add_button('📤 Снять по ID', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'inventory_unequip_prompt'})
     keyboard.add_line()
-    # ❌ УБИРАЕМ КНОПКУ "📜 Свитки"
-    # ❌ УБИРАЕМ КНОПКУ "👤 В профиль"
+    keyboard.add_button('🗑️ Выкинуть по ID', color=VkKeyboardColor.NEGATIVE, payload={'cmd': 'inventory_delete_prompt'})
+    keyboard.add_line()
     keyboard.add_button('🏕️ В лагерь', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_camp'})
     
-    await send_message(vk, user_id, text, keyboard) 
+    await send_message(vk, user_id, text, keyboard)
 
 
 async def show_inventory_equip_prompt(vk, user_id):
@@ -186,7 +186,8 @@ async def show_inventory_equip_by_id(vk, user_id, item_id):
         await send_message(vk, user_id, 'Сначала создайте персонажа.', get_back_keyboard('город'))
         return
     
-    # Проверяем, существует ли предмет и принадлежит ли игроку
+    print(f"🔍 show_inventory_equip_by_id: user_id={user_id}, item_id={item_id}")  # ОТЛАДКА
+    
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     cur.execute('''
@@ -200,11 +201,19 @@ async def show_inventory_equip_by_id(vk, user_id, item_id):
     
     if not row:
         await send_message(vk, user_id, '❌ Предмет не найден или не принадлежит вам.', get_back_keyboard('инвентарь'))
+        await show_inventory(vk, user_id)
         return
     
     slot = row[5]
     
-    # Экипируем предмет
+    # Проверяем классовые ограничения
+    from items import can_equip_item
+    can, msg = can_equip_item(char['id'], row[1])  # row[1] = template_id
+    if not can:
+        await send_message(vk, user_id, f'❌ {msg}', get_back_keyboard('инвентарь'))
+        await show_inventory(vk, user_id)
+        return
+    
     success = equip_item(char['id'], item_id, slot)
     if success:
         await recalc_stats_async(char['id'])
@@ -212,6 +221,40 @@ async def show_inventory_equip_by_id(vk, user_id, item_id):
     else:
         await send_message(vk, user_id, '❌ Не удалось экипировать предмет.', get_back_keyboard('инвентарь'))
     
+    await show_inventory(vk, user_id)
+
+
+async def show_inventory_unequip_by_id(vk, user_id, item_id):
+    char = await get_character_async(user_id)
+    if not char:
+        await send_message(vk, user_id, 'Сначала создайте персонажа.', get_back_keyboard('город'))
+        return
+    
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute('''
+        SELECT slot
+        FROM equipment
+        WHERE character_id = ? AND player_item_id = ?
+    ''', (char['id'], item_id))
+    row = cur.fetchone()
+    conn.close()
+    
+    if not row:
+        await send_message(vk, user_id, '❌ Предмет не надет или не принадлежит вам.', get_back_keyboard('инвентарь'))
+        await show_inventory(vk, user_id)
+        return
+    
+    slot = row[0]
+    
+    success = unequip_item(char['id'], slot)
+    if success:
+        await recalc_stats_async(char['id'])
+        await send_message(vk, user_id, f'✅ Предмет снят с слота {slot}!', get_back_keyboard('инвентарь'))
+    else:
+        await send_message(vk, user_id, '❌ Не удалось снять предмет.', get_back_keyboard('инвентарь'))
+    
+    # ✅ ВСЕГДА ВОЗВРАЩАЕМСЯ В ИНВЕНТАРЬ
     await show_inventory(vk, user_id)
 
 

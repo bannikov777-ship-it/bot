@@ -246,6 +246,7 @@ async def message_handler(message: Message):
                 'awaiting_premium_buy',
                 'awaiting_code',
                 'awaiting_inventory_equip_id',
+                'awaiting_inventory_delete_id',
                 'awaiting_inventory_unequip_id',
                 'awaiting_tower_invite',
                 'awaiting_guild_accept',
@@ -258,7 +259,26 @@ async def message_handler(message: Message):
             
             # Если состояние НЕ в списке ожидаемых - игнорируем
             if state not in text_input_states:
-                # ✅ ВАЖНО: не игнорируем кнопки, они обработаны выше
+                # ✅ Проверяем команды перед игнорированием
+                
+                # ---- КОМАНДА ПОВЫШЕНИЯ УРОВНЯ ----
+                if text and text.lower().startswith('!levelup'):
+                    from admin import admin_levelup
+                    parts = text.split()
+                    levels = 1
+                    if len(parts) > 1:
+                        try:
+                            levels = int(parts[1])
+                            if levels <= 0 or levels > 100:
+                                await send_message(bot.api, user_id, '❌ Введите число от 1 до 100.')
+                                return
+                        except ValueError:
+                            await send_message(bot.api, user_id, '❌ Введите число уровней (например: !levelup 10)')
+                            return
+                    await admin_levelup(bot.api, user_id, levels=levels)
+                    return
+                
+                # Если не команда - игнорируем
                 return
 
             # ---- ОБРАБОТКА ВВОДА ИМЕНИ ----
@@ -312,6 +332,52 @@ async def message_handler(message: Message):
                 await show_city(bot.api, user_id)
                 return
 
+            # ---- ИНВЕНТАРЬ - ВЫКИНУТЬ ----
+            if state == 'awaiting_inventory_delete_id':
+                try:
+                    item_id = int(text.strip())
+                    if item_id <= 0:
+                        await send_message(bot.api, user_id, '❌ ID должен быть положительным числом.', get_back_keyboard('инвентарь'))
+                        return
+                    
+                    # ✅ УБИРАЕМ ЛОКАЛЬНЫЙ ИМПОРТ
+                    char = await get_character_async(user_id)
+                    if not char:
+                        await send_message(bot.api, user_id, 'Сначала создайте персонажа.', get_back_keyboard('город'))
+                        return
+                    
+                    conn = sqlite3.connect(DB_NAME)
+                    cur = conn.cursor()
+                    cur.execute('SELECT owner_id FROM player_items WHERE id = ?', (item_id,))
+                    row = cur.fetchone()
+                    conn.close()
+                    
+                    if not row:
+                        await send_message(bot.api, user_id, '❌ Предмет не найден.', get_back_keyboard('инвентарь'))
+                        await show_inventory(bot.api, user_id)
+                        return
+                    
+                    if row[0] != char['id']:
+                        await send_message(bot.api, user_id, '❌ Предмет не принадлежит вам.', get_back_keyboard('инвентарь'))
+                        await show_inventory(bot.api, user_id)
+                        return
+                    
+                    keyboard = VkKeyboard()
+                    keyboard.add_button('✅ Да, выкинуть', color=VkKeyboardColor.NEGATIVE, 
+                                       payload={'cmd': 'inventory_delete_execute', 'item_id': item_id})
+                    keyboard.add_button('❌ Отмена', color=VkKeyboardColor.SECONDARY, 
+                                       payload={'cmd': 'inventory'})
+                    
+                    await send_message(bot.api, user_id, 
+                        f'⚠️ ВЫ УВЕРЕНЫ?\n\n'
+                        f'🗑️ Вы собираетесь выкинуть предмет ID:{item_id}.\n'
+                        f'Это действие НЕОБРАТИМО!',
+                        keyboard)
+                    
+                except ValueError:
+                    await send_message(bot.api, user_id, '❌ Введите число (ID предмета).', get_back_keyboard('инвентарь'))
+                return
+
             # ---- ПРЕМИУМ МАГАЗИН (ввод ID) ----
             if state == 'awaiting_premium_buy':
                 try:
@@ -361,18 +427,24 @@ async def message_handler(message: Message):
                     if amount <= 0:
                         await send_message(bot.api, user_id, '❌ Сумма должна быть положительным числом.', get_back_keyboard('гильдию'))
                         return
+                    
+                    # ✅ ИСПОЛЬЗУЕМ get_character_async ИЗ ИМПОРТА
                     char = await get_character_async(user_id)
                     if not char:
                         await send_message(bot.api, user_id, '❌ Сначала создайте персонажа.', get_back_keyboard('город'))
                         return
+                    
                     guild = await asyncio.to_thread(get_guild_by_character, char['id'])
                     if not guild:
                         await send_message(bot.api, user_id, '❌ Вы не состоите в гильдии.', get_back_keyboard('гильдию'))
                         return
+                    
                     if char['silver'] < amount:
                         await send_message(bot.api, user_id, f'❌ Недостаточно серебра! Нужно {amount}💰.', get_back_keyboard('гильдию'))
                         return
+                    
                     await show_guild_donate_confirm(bot.api, user_id, amount)
+                    
                 except ValueError:
                     await send_message(bot.api, user_id, '❌ Введите целое число (например, 100).', get_back_keyboard('гильдию'))
                 return
@@ -781,6 +853,20 @@ async def message_handler(message: Message):
                 except ValueError:
                     await send_message(bot.api, user_id, '❌ Введите число (ID игрока).', get_back_keyboard('башня'))
                     await update_user_async(user_id, state='tower', context={'parent_state': 'meadow'})
+                return
+
+                    # ---- КОМАНДА ПОВЫШЕНИЯ УРОВНЯ ----
+            if text and text.lower().startswith('!levelup'):
+                from admin import admin_levelup
+                parts = text.split()
+                levels = 1
+                if len(parts) > 1:
+                    try:
+                        levels = int(parts[1])
+                    except:
+                        await send_message(bot.api, user_id, '❌ Введите число уровней.')
+                        return
+                await admin_levelup(bot.api, user_id, levels=levels)
                 return
 
         except Exception as e:

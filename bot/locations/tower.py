@@ -19,7 +19,7 @@ async def show_tower(vk, user_id):
         keyboard = VkKeyboard()
         keyboard.add_button('🏰 Создать группу', color=VkKeyboardColor.PRIMARY, payload={'cmd': 'tower_create_party'})
         keyboard.add_button('🌿 На луг', color=VkKeyboardColor.SECONDARY, payload={'cmd': 'go_meadow'})  # ✅ исправлено
-        await send_message(vk, user_id, '🗼 Вы у входа в Башню.\n\nВы не состоите в группе. Создайте её, чтобы начать.', keyboard)
+        await send_message(vk, user_id, '🗼 Вы у входа в Башню.\n\nВы не состоите в группе. Создайте её, чтобы начать.', keyboard, attachment=TOWER_IMAGE)
     else:
         from core import get_character_by_id_async
         leader = await get_character_by_id_async(party['leader_id'])

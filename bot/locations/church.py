@@ -6,7 +6,7 @@ from vk_api.keyboard import VkKeyboard, VkKeyboardColor
 import sqlite3
 from config import DB_NAME
 
-CHURCH_IMAGE = 'photo-240828623_456239034'
+CHURCH_IMAGE = 'photo-240828623_456239035'
 
 
 async def show_church(vk, user_id):
